@@ -19,6 +19,7 @@ if (strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
 
 require dirname(__DIR__, 2) . '/config/products_repository.php';
 require dirname(__DIR__, 2) . '/config/equipment_inventory_repository.php';
+require_once dirname(__DIR__, 2) . '/config/customer_orders_repository.php';
 
 $payloadRaw = file_get_contents('php://input');
 $payload = json_decode((string) $payloadRaw, true);
@@ -33,16 +34,50 @@ if ($productKey === '') {
     exit;
 }
 
-$products = load_products_repository();
-$equipmentInventory = sync_equipment_inventory_with_products(
-    $products,
-    load_equipment_inventory_repository(),
-    12
-);
-$archivedEquipmentUnits = load_archived_equipment_units_repository();
 $projectRoot = dirname(__DIR__, 2);
 
 try {
+    // Hold the same lock as booking submission until every archive write finishes.
+    $archiveMutationLock = customer_orders_repository_acquire_lock();
+    if ($archiveMutationLock === null) {
+        http_response_code(503);
+        echo json_encode(['ok' => false, 'message' => 'Inventory is busy. Please try archiving this product again.']);
+        exit;
+    }
+
+    $products = load_products_repository();
+    if (!isset($products[$productKey]) || !is_array($products[$productKey])) {
+        http_response_code(404);
+        echo json_encode(['ok' => false, 'message' => 'Product was not found. Refresh the dashboard before trying again.']);
+        exit;
+    }
+
+    $orders = load_customer_orders_repository();
+    $equipmentInventory = sync_equipment_inventory_with_products(
+        $products,
+        load_equipment_inventory_repository(),
+        12
+    );
+    $archivedEquipmentUnits = load_archived_equipment_units_repository();
+
+    foreach ((array) ($equipmentInventory[$productKey]['units'] ?? []) as $unit) {
+        if (normalize_equipment_status_token($unit['status'] ?? '') === 'in-use') {
+            http_response_code(409);
+            echo json_encode(['ok' => false, 'message' => 'This product has a unit in use. Complete its return before archiving the product.']);
+            exit;
+        }
+    }
+
+    $reservationIntervals = customer_order_group_intervals_by_product(
+        customer_order_build_camera_reservation_intervals($orders, $products)
+    );
+    $normalizedProductKey = normalize_customer_order_product_key($productKey);
+    if (customer_order_peak_reserved_quantity($reservationIntervals[$normalizedProductKey] ?? [], time()) > 0) {
+        http_response_code(409);
+        echo json_encode(['ok' => false, 'message' => 'This product still has active or upcoming reservations. Resolve those bookings in Reservations before archiving it.']);
+        exit;
+    }
+
     $archiveInventoryResult = archive_all_equipment_units_for_product(
         $equipmentInventory,
         $archivedEquipmentUnits,

@@ -15,6 +15,7 @@ if (!isset($_SESSION['user_id'])) {
 
 require dirname(__DIR__, 2) . '/config/products_repository.php';
 require dirname(__DIR__, 2) . '/config/equipment_inventory_repository.php';
+require_once dirname(__DIR__, 2) . '/config/customer_orders_repository.php';
 
 function redirect_admin_brands_page($status, $message)
 {
@@ -41,6 +42,13 @@ function update_product_brand_payload(array $product, $brandLabel)
 
 if (strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $action = trim((string) ($_POST['brand_action'] ?? ''));
+    if (in_array($action, ['rename_brand', 'remove_brand'], true)) {
+        $brandMutationLock = customer_orders_repository_acquire_lock();
+        if ($brandMutationLock === null) {
+            redirect_admin_brands_page('error', 'Inventory is busy. Please try this brand change again.');
+        }
+    }
+
     $brands = load_product_brands_repository();
     $brandMap = product_brand_value_map($brands);
     $selectedValue = trim((string) ($_POST['brand_value'] ?? ''));
@@ -186,6 +194,7 @@ if (strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             $targetBrandValue = product_brand_slug($selectedBrand);
             $products = load_products_repository();
             $archivedProducts = load_archived_products_repository();
+            $orders = load_customer_orders_repository();
             $equipmentInventory = sync_equipment_inventory_with_products(
                 $products,
                 load_equipment_inventory_repository(),
@@ -207,6 +216,24 @@ if (strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 }
 
                 $productKeysToArchive[] = (string) $productKey;
+            }
+
+            // Validate every model before archive_product_record can move any images.
+            $reservationIntervals = customer_order_group_intervals_by_product(
+                customer_order_build_camera_reservation_intervals($orders, $products)
+            );
+            foreach ($productKeysToArchive as $productKey) {
+                $productLabel = equipment_model_label_from_product($products[$productKey]);
+                foreach ((array) ($equipmentInventory[$productKey]['units'] ?? []) as $unit) {
+                    if (normalize_equipment_status_token($unit['status'] ?? '') === 'in-use') {
+                        throw new RuntimeException('Cannot remove this brand while ' . $productLabel . ' has a unit in use. Complete its return first.');
+                    }
+                }
+
+                $normalizedProductKey = normalize_customer_order_product_key($productKey);
+                if (customer_order_peak_reserved_quantity($reservationIntervals[$normalizedProductKey] ?? [], time()) > 0) {
+                    throw new RuntimeException('Cannot remove this brand while ' . $productLabel . ' has active or upcoming reservations. Resolve those bookings first.');
+                }
             }
 
             $archivedProductsCount = 0;

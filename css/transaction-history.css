@@ -1,0 +1,147 @@
+.transaction-history-controls {
+    margin: 0 0 1rem;
+    padding: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 14px;
+    background: #191a1c;
+    color: #f4f4f4;
+    color-scheme: dark;
+}
+
+.transaction-history-fields {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.85rem;
+    align-items: end;
+}
+
+.transaction-history-field {
+    display: grid;
+    min-width: 0;
+    gap: 0.4rem;
+    margin: 0;
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+.transaction-history-field input,
+.transaction-history-field select {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    padding: 0.65rem 0.7rem;
+    border: 1px solid #67696c;
+    border-radius: 8px;
+    background: #252629;
+    color: #f4f4f4;
+    font: inherit;
+}
+
+.transaction-history-field input::placeholder {
+    color: #b8b9bc;
+    opacity: 1;
+}
+
+.transaction-history-field option {
+    background: #252629;
+    color: #f4f4f4;
+}
+
+.transaction-history-reset {
+    min-height: 44px;
+    padding: 0.65rem 1rem;
+    border: 1px solid #a8ac36;
+    border-radius: 8px;
+    background: transparent;
+    color: #e3e975;
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.transaction-history-reset:hover {
+    background: #31331d;
+}
+
+.transaction-history-field input:focus-visible,
+.transaction-history-field select:focus-visible,
+.transaction-history-reset:focus-visible,
+.admin-bookings-table-wrap:focus-visible {
+    outline: 2px solid #dde531;
+    outline-offset: 3px;
+}
+
+.transaction-history-summary,
+.transaction-history-error {
+    margin: 0.85rem 0 0;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    color: #c9cbcd;
+}
+
+.transaction-history-error {
+    color: #ffb4b4;
+}
+
+.transaction-history-title {
+    color: #f4f4f4;
+    font-size: 1.2rem;
+    font-weight: 700;
+    margin: 0 0 1rem;
+}
+
+.admin-bookings-table-wrap {
+    overflow-x: auto;
+    border-radius: 12px;
+}
+
+.admin-bookings-table {
+    min-width: 760px;
+}
+
+.admin-bookings-camera-col {
+    max-width: 280px;
+    overflow-wrap: anywhere;
+}
+
+.admin-bookings-row[hidden],
+.admin-bookings-empty[hidden] {
+    display: none;
+}
+
+.cart-history-head h3,
+.cart-history-item-main,
+.cart-history-reference {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.cart-history-head .profile-order-status {
+    flex-shrink: 0;
+    max-width: 55%;
+    white-space: normal;
+    text-align: center;
+}
+
+@media (max-width: 1000px) {
+    .transaction-history-fields {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 540px) {
+    .transaction-history-fields {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .transaction-history-reset {
+        width: 100%;
+    }
+
+    .cart-history-head {
+        flex-wrap: wrap;
+    }
+
+    .cart-history-head .profile-order-status {
+        max-width: 100%;
+    }
+}

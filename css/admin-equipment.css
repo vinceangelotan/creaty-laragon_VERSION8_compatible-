@@ -1,0 +1,193 @@
+.admin-equipment-intro {
+    max-width: 850px;
+    margin: 0 0 1rem;
+    color: #ceced4;
+    font-size: 0.83rem;
+    line-height: 1.6;
+}
+
+.admin-equipment-toolbar {
+    display: flex;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 0.8rem 1rem;
+    margin-bottom: 1rem;
+}
+
+.admin-equipment-search-field {
+    flex: 1 1 240px;
+    max-width: 440px;
+}
+
+.admin-equipment-search-field label {
+    display: block;
+    margin-bottom: 0.35rem;
+    color: #ededf1;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.admin-equipment-search-field input {
+    width: 100%;
+    min-height: 42px;
+    padding: 0.6rem 0.85rem;
+    border: 1px solid #67676f;
+    border-radius: 9px;
+    background: #19191e;
+    color: #f4f4f4;
+    font: inherit;
+    font-size: 0.85rem;
+    color-scheme: dark;
+}
+
+.admin-equipment-search-field input::placeholder { color: #aaaab3; }
+
+.admin-equipment-toggle-all {
+    min-height: 42px;
+    padding: 0.6rem 0.9rem;
+    border: 1px solid #67676f;
+    border-radius: 9px;
+    background: #29292f;
+    color: #f4f4f4;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.admin-equipment-toggle-all:disabled { opacity: 0.55; cursor: default; }
+
+.admin-equipment-results {
+    margin: 0 0 0.65rem auto;
+    color: #ceced4;
+    font-size: 0.8rem;
+}
+
+.admin-equipment-grouped-wrap {
+    overflow-x: auto;
+    border-radius: 12px;
+}
+
+.admin-equipment-scroll-hint { display: none; }
+
+.admin-equipment-grouped-table { min-width: 760px; }
+
+.admin-equipment-grouped-table > thead > tr > th:first-child { text-align: left; }
+
+.admin-equipment-heading-note,
+.admin-equipment-unit-label {
+    display: block;
+    margin-top: 0.2rem;
+    color: #bdbdc6;
+    font-size: 0.7rem;
+    font-weight: 500;
+    text-transform: none;
+}
+
+.admin-equipment-model-row { cursor: pointer; }
+.admin-equipment-model-row:hover,
+.admin-equipment-model-row.is-expanded { background: #27272e; }
+
+.admin-equipment-grouped-table .admin-equipment-model-row > th { padding: 0; text-align: left; }
+
+.admin-equipment-expand {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    width: 100%;
+    min-height: 84px;
+    padding: 0.9rem 1rem;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: #f4f4f4;
+    text-align: left;
+    font: inherit;
+    font-size: 0.87rem;
+    font-weight: 700;
+}
+
+.admin-equipment-expand small {
+    display: block;
+    margin-top: 0.3rem;
+    color: #bdbdc6;
+    font-size: 0.7rem;
+    font-weight: 500;
+}
+
+.admin-equipment-chevron {
+    flex: 0 0 16px;
+    font-size: 1.6rem;
+    text-align: center;
+    line-height: 1;
+}
+
+.admin-equipment-expand[aria-expanded="true"] .admin-equipment-chevron { transform: rotate(90deg); }
+.admin-equipment-quantity { font-size: 1.35rem; font-variant-numeric: tabular-nums; }
+
+.admin-equipment-status-summary {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    max-width: 270px;
+    margin: auto;
+}
+
+.admin-equipment-status-count {
+    padding: 0.28rem 0.55rem;
+    border: 1px solid #66666f;
+    border-radius: 999px;
+    background: #34343b;
+    color: #e1e1e7;
+    font-size: 0.69rem;
+    white-space: nowrap;
+}
+
+.admin-equipment-status-count.is-available { background: #183d2c; border-color: #3a7659; color: #c1f2d5; }
+.admin-equipment-status-count.is-in-use { background: #46371b; border-color: #806c37; color: #ffe1a0; }
+
+.admin-equipment-grouped-table .admin-equipment-add-units,
+.admin-equipment-grouped-table .admin-equipment-remove-unit {
+    width: auto;
+    min-height: 38px;
+    padding: 0.45rem 0.7rem;
+    font-size: 0.76rem;
+    white-space: nowrap;
+}
+
+.admin-equipment-grouped-table .admin-equipment-add-units { background: #326d24; }
+.admin-equipment-grouped-table .admin-equipment-remove-unit { background: #993b3b; }
+.admin-equipment-remove-unit:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+.admin-equipment-grouped-table .admin-equipment-detail-row > td { padding: 0.8rem 1rem 1.1rem; background: #19191e; }
+.admin-equipment-unit-panel { border: 1px solid #4a4a54; border-radius: 8px; overflow: hidden; }
+.admin-equipment-unit-title { margin: 0; padding: 0.75rem 1rem; background: #25252d; color: #e0e0e7; text-align: left; font-size: 0.8rem; }
+.admin-equipment-unit-table { width: 100%; border-collapse: collapse; }
+.admin-equipment-grouped-table .admin-equipment-unit-table th,
+.admin-equipment-grouped-table .admin-equipment-unit-table td { padding: 0.7rem 1rem; border-color: #42424b; font-size: 0.79rem; }
+.admin-equipment-grouped-table .admin-equipment-unit-table thead th { color: #bdbdc6; font-size: 0.7rem; }
+.admin-equipment-grouped-table .admin-equipment-unit-table th:first-child { text-align: left; }
+.admin-equipment-grouped-table .admin-equipment-unit-table tbody th { text-transform: none; font-weight: 600; }
+.admin-equipment-grouped-table .admin-equipment-unit-table tr:last-child > * { border-bottom: 0; }
+.admin-equipment-unit-table .admin-equipments-status { min-height: 38px; max-width: 260px; appearance: auto; -webkit-appearance: auto; padding: 0.35rem 0.8rem; }
+.admin-equipment-lock-note { display: block; margin-top: 0.35rem; color: #ceced4; font-size: 0.68rem; }
+.admin-equipment-empty-search { margin: 0; padding: 1.5rem; color: #ceced4; text-align: center; font-size: 0.9rem; }
+
+.admin-equipment-search-field input:focus-visible,
+.admin-equipment-toggle-all:focus-visible,
+.admin-equipment-expand:focus-visible,
+.admin-equipment-grouped-wrap:focus-visible,
+.admin-equipment-grouped-table button:focus-visible { outline: 2px solid #e8d7ff; outline-offset: -3px; }
+
+.admin-equipment-grouped-table [hidden],
+.admin-equipment-empty-search[hidden] { display: none !important; }
+
+@media (max-width: 640px) {
+    .admin-equipments-head { align-items: flex-start; flex-wrap: wrap; }
+    .admin-equipment-search-field { max-width: none; flex-basis: 100%; }
+    .admin-equipment-results { margin-left: 0; }
+    .admin-equipment-scroll-hint { display: block; margin: 0 0 0.6rem; color: #bdbdc6; font-size: 0.72rem; }
+    .admin-equipment-grouped-table { min-width: 680px; }
+    .admin-equipment-grouped-table > thead > tr > th,
+    .admin-equipment-grouped-table .admin-equipment-model-row > td { padding: 0.7rem; }
+    .admin-equipment-expand { padding: 0.8rem 0.7rem; }
+}

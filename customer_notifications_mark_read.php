@@ -27,6 +27,17 @@ if (strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
 }
 
 require_once __DIR__ . '/config/customer_notifications_repository.php';
+require_once __DIR__ . '/config/customer_orders_repository.php';
+
+// Status notifications are appended under the booking lock. Keep the complete
+// mark-read operation under that same lock so it cannot erase a new notice.
+$notificationMutationLock = customer_orders_repository_acquire_lock();
+if ($notificationMutationLock === null) {
+    customer_notifications_mark_read_respond(503, [
+        'ok' => false,
+        'message' => 'Notifications are busy. Please try again.',
+    ]);
+}
 
 $customerId = trim((string) ($_SESSION['customer_id'] ?? ''));
 

@@ -17,6 +17,12 @@
     box-sizing: border-box;
 }
 
+/* Layout rules such as display:grid must not make closed dialogs or inactive
+   panels visible or let them intercept clicks. */
+[hidden]:not([hidden="until-found"]) {
+    display: none !important;
+}
+
 html,
 body {
     min-height: 100%;
@@ -11561,6 +11567,8 @@ ol.cart-terms-editor-mini-list > .cart-terms-editor-mini-item::before {
 }
 
 .admin-booking-cancel-modal {
+    max-height: calc(100dvh - 2rem);
+    overflow-y: auto;
     width: min(100%, 560px);
     border: 1px solid rgba(217, 217, 217, 0.28);
     background: #111214;
@@ -11601,6 +11609,56 @@ ol.cart-terms-editor-mini-list > .cart-terms-editor-mini-item::before {
     color: #d8d8db;
     font-size: 0.84rem;
     line-height: 1.45;
+}
+
+.admin-booking-reason-label {
+    display: block;
+    color: #f4f4f4;
+    font-size: 0.84rem;
+    font-weight: 600;
+}
+
+.admin-booking-reason-label span {
+    color: #bfc2c8;
+    font-weight: 400;
+}
+
+.admin-booking-reason-select {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    padding: 0.6rem;
+    border: 1px solid #5e6068;
+    border-radius: 8px;
+    background: #202226;
+    color: #f4f4f4;
+    font: inherit;
+    font-size: 0.84rem;
+    color-scheme: dark;
+}
+
+.admin-booking-reason-select:focus-visible {
+    outline: 2px solid #ece3a9;
+    outline-offset: 2px;
+}
+
+.admin-booking-reason-custom .admin-booking-reason-label { margin-bottom: 0.5rem; }
+.admin-booking-reason-custom[hidden] { display: none; }
+.admin-booking-reason-select[aria-invalid="true"] { border-color: #ffbebe; }
+
+.admin-booking-flash {
+    padding: 0.85rem 1rem;
+    margin: 0 0 1rem;
+    border: 1px solid #4d8262;
+    border-radius: 8px;
+    background: #17271e;
+    color: #d4f4df;
+}
+
+.admin-booking-flash.is-error {
+    border-color: #985d5d;
+    background: #321e20;
+    color: #ffd3d3;
 }
 
 .admin-booking-cancel-textarea {
@@ -11663,6 +11721,8 @@ ol.cart-terms-editor-mini-list > .cart-terms-editor-mini-item::before {
 }
 
 .admin-booking-review-modal {
+    max-height: calc(100dvh - 2rem);
+    overflow-y: auto;
     width: min(100%, 560px);
     border: 1px solid rgba(217, 217, 217, 0.28);
     background: #111214;

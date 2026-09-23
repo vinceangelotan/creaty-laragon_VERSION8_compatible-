@@ -19,22 +19,32 @@ if (strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
 }
 
 require_once dirname(__DIR__, 2) . '/config/customer_orders_repository.php';
+require_once dirname(__DIR__, 2) . '/config/booking_reason_options.php';
+
+function booking_action_redirect($message, $type = 'error')
+{
+    $_SESSION['admin_booking_flash'] = ['message' => $message, 'type' => $type];
+    header('Location: ./?admin_view=bookings');
+    exit;
+}
+
+$submittedToken = (string) ($_POST['booking_action_token'] ?? '');
+$expectedToken = (string) ($_SESSION['booking_action_token'] ?? '');
+if ($expectedToken === '' || !hash_equals($expectedToken, $submittedToken)) {
+    booking_action_redirect('Your session changed. Refresh the reservations page and try again.');
+}
 
 $orderId = trim((string) ($_POST['order_id'] ?? ''));
 $nextStatus = trim((string) ($_POST['next_status'] ?? 'pending'));
 $cancelReason = trim((string) ($_POST['cancel_reason'] ?? ''));
 $refundProofDataUrl = trim((string) ($_POST['refund_proof_data_url'] ?? ''));
-$redirectInput = trim((string) ($_POST['redirect'] ?? './?admin_view=bookings'));
-
 $redirectTarget = './?admin_view=bookings';
 
-if ($redirectInput !== ''
-    && strpos($redirectInput, '://') === false
-    && strpos($redirectInput, "\n") === false
-    && strpos($redirectInput, "\r") === false
-) {
-    $redirectTarget = $redirectInput;
-}
+// Every rejected transition has visible feedback instead of a silent reload.
+$_SESSION['admin_booking_flash'] = [
+    'type' => 'error',
+    'message' => 'This booking changed or the action is no longer available. Review its current status and try again.',
+];
 
 if ($orderId === '') {
     header('Location: ' . $redirectTarget);
@@ -47,6 +57,13 @@ $nextStatusToken = $handoverMode === ''
     : '';
 $isReturnedEarlyAction = $handoverMode === '' && customer_order_is_returned_early_request($nextStatus);
 
+if ($handoverMode === '' && customer_order_status_requires_reason($nextStatusToken)) {
+    $cancelReason = resolve_booking_reason($nextStatusToken, $_POST['reason_choice'] ?? '', $cancelReason);
+    if ($cancelReason === '') {
+        booking_action_redirect('Select a reason, or choose Others and enter an explanation.');
+    }
+}
+
 if ($handoverMode === '' && $nextStatusToken === 'awaiting-refund') {
     header('Location: ' . $redirectTarget);
     exit;
@@ -58,8 +75,7 @@ if ($handoverMode === '' && customer_order_status_requires_reason($nextStatusTok
 }
 
 if ($handoverMode === '' && $nextStatusToken === 'refunded' && strpos($refundProofDataUrl, 'data:image/') !== 0) {
-    header('Location: ' . $redirectTarget);
-    exit;
+    booking_action_redirect('Upload the refund receipt image before confirming a refund.');
 }
 
 $currentOrder = find_customer_order_record_by_id($orderId);
@@ -83,8 +99,7 @@ if ($handoverMode !== '') {
         exit;
     }
 
-    header('Location: ' . $redirectTarget);
-    exit;
+    booking_action_redirect('Equipment handover confirmed.', 'success');
 }
 
 if ($currentStatusToken === 'awaiting-refund' && $nextStatusToken !== 'refunded') {
@@ -157,5 +172,4 @@ if ($updatedOrder === null) {
     exit;
 }
 
-header('Location: ' . $redirectTarget);
-exit;
+booking_action_redirect('Booking status updated successfully.', 'success');

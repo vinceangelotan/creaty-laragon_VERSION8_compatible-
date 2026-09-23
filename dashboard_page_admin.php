@@ -79,6 +79,12 @@ $adminNotificationCount = count_unread_message_notifications($adminNotifications
 
 require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/customer_orders_repository.php';
+require_once __DIR__ . '/config/booking_reason_options.php';
+if (empty($_SESSION['booking_action_token'])) {
+    $_SESSION['booking_action_token'] = bin2hex(random_bytes(32));
+}
+$adminBookingFlash = $_SESSION['admin_booking_flash'] ?? null;
+unset($_SESSION['admin_booking_flash']);
 require_once __DIR__ . '/config/customer_gcash_profiles_repository.php';
 require_once __DIR__ . '/config/services_packages_repository.php';
 
@@ -1507,10 +1513,23 @@ foreach ($customerBookingsRecords as $bookingRecord) {
 
     $orderNumberLabel = strtoupper($bookingId);
 
+    $bookingItemLabels = [];
+    foreach (is_array($bookingRecord['items'] ?? null) ? $bookingRecord['items'] : [] as $summaryItem) {
+        if (!is_array($summaryItem)) {
+            continue;
+        }
+        $summaryName = trim((string) ($summaryItem['name'] ?? ''));
+        if ($summaryName !== '') {
+            $summaryQuantity = max(1, (int) ($summaryItem['qty'] ?? 1));
+            $bookingItemLabels[] = $summaryName . ($summaryQuantity > 1 ? ' ×' . $summaryQuantity : '');
+        }
+    }
+
     $dashboardBookings[] = [
         'id' => $bookingId,
         'name' => $customerName,
         'order' => $orderNumberLabel,
+        'itemsSummary' => implode(', ', $bookingItemLabels),
         'time' => $bookingTimestampLabel,
         'status' => $bookingStatusLabel,
         'statusClass' => $bookingStatusClass,
@@ -1730,6 +1749,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new RuntimeException('Staff can modify equipment status only.');
             }
 
+            // Share the booking lock so inventory reductions cannot race a reservation.
+            $equipmentMutationLock = customer_orders_repository_acquire_lock();
+            if ($equipmentMutationLock === null) {
+                throw new RuntimeException('Inventory is busy. Please try again.');
+            }
+
+            $products = load_products_repository();
+            $customerBookingsRecords = load_customer_orders_repository();
+            $equipmentInventory = sync_equipment_inventory_with_products($products, load_equipment_inventory_repository(), 12);
+            $archivedEquipmentUnits = load_archived_equipment_units_repository();
+            $equipmentStatuses = normalize_equipment_statuses_collection(load_equipment_statuses_repository());
+            $productNameLookup = customer_order_product_name_lookup_map($products);
+            $equipmentInUseRequirementsByProduct = customer_order_collect_in_use_requirements_by_product($customerBookingsRecords, $products, $productNameLookup);
+            $equipmentReservationIntervals = customer_order_group_intervals_by_product(
+                customer_order_build_camera_reservation_intervals($customerBookingsRecords, $products, $productNameLookup)
+            );
+            $equipmentCurrentCapacity = customer_order_product_capacity_map($products, $equipmentInventory);
+            $assertEquipmentCapacity = static function ($productKey, $candidateInventory) use ($products, $equipmentReservationIntervals, $equipmentCurrentCapacity) {
+                $normalizedKey = normalize_customer_order_product_key($productKey);
+                $candidateCapacityMap = customer_order_product_capacity_map($products, $candidateInventory);
+                $candidateCapacity = (int) ($candidateCapacityMap[$normalizedKey] ?? 0);
+                $currentCapacity = (int) ($equipmentCurrentCapacity[$normalizedKey] ?? 0);
+                $reservedPeak = customer_order_peak_reserved_quantity($equipmentReservationIntervals[$normalizedKey] ?? [], time());
+
+                if ($candidateCapacity < $currentCapacity && $candidateCapacity < $reservedPeak) {
+                    throw new RuntimeException('This change would leave too few units for existing reservations. Resolve the affected bookings first.');
+                }
+            };
+
             if ($adminAction === 'equipment_add_status') {
                 $openStatusOnRedirect = true;
                 $statusLabel = trim((string) ($_POST['status_label'] ?? ''));
@@ -1943,6 +1991,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 if (!$activeUnits) {
                     throw new RuntimeException('No active equipment units found for this product.');
+                }
+
+                $unitToRemove = null;
+                foreach ($activeUnits as $activeUnit) {
+                    if ((int) ($activeUnit['serial'] ?? -1) === $serial) {
+                        $unitToRemove = $activeUnit;
+                        break;
+                    }
+                }
+
+                if ($unitToRemove === null) {
+                    throw new RuntimeException('Equipment unit was not found. Refresh the inventory and try again.');
+                }
+                if (normalize_equipment_status_token($unitToRemove['status'] ?? '') === 'in-use') {
+                    throw new RuntimeException('Cannot remove a unit while it is in use by a booking.');
+                }
+
+                $candidateInventory = $equipmentInventory;
+                $candidateInventory[$productKey]['units'] = array_values(array_filter($activeUnits, static function ($unit) use ($serial) {
+                    return (int) ($unit['serial'] ?? -1) !== $serial;
+                }));
+                $assertEquipmentCapacity($productKey, $candidateInventory);
+
+                if (count($activeUnits) <= 1 && customer_order_peak_reserved_quantity($equipmentReservationIntervals[normalize_customer_order_product_key($productKey)] ?? [], time()) > 0) {
+                    throw new RuntimeException('Cannot archive a model that still has reservations. Resolve the affected bookings first.');
                 }
 
                 if (count($activeUnits) <= 1) {
@@ -2159,6 +2232,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new RuntimeException('Selected status is no longer available.');
                 }
 
+                if ($currentUnitStatus === '') {
+                    throw new RuntimeException('Equipment unit was not found. Refresh the inventory and try again.');
+                }
+
                 if ($status === 'in-use' && $currentUnitStatus !== 'in-use') {
                     throw new RuntimeException('IN USE is adaptive and cannot be set manually.');
                 }
@@ -2169,12 +2246,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new RuntimeException('This unit is currently locked to IN USE by an ongoing booking.');
                 }
 
-                $equipmentInventory = update_equipment_unit_status(
+                $candidateInventory = update_equipment_unit_status(
                     $equipmentInventory,
                     $productKey,
                     $serial,
                     $status
                 );
+                $assertEquipmentCapacity($productKey, $candidateInventory);
+                $equipmentInventory = $candidateInventory;
 
                 $equipmentInventory = sync_equipment_inventory_with_products($products, $equipmentInventory, 12);
 
@@ -2213,6 +2292,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $equipmentRows = [];
 $equipmentUnitCountsByProduct = [];
+$equipmentGroupsByProduct = [];
 
 foreach ($products as $productKey => $product) {
     if (!is_array($product) || !isset($equipmentInventory[$productKey])) {
@@ -2227,13 +2307,21 @@ foreach ($products as $productKey => $product) {
     $units = is_array($inventoryEntry['units']) ? $inventoryEntry['units'] : [];
 
     $equipmentUnitCountsByProduct[$productKey] = count($units);
+    $equipmentGroupsByProduct[$productKey] = [
+        'productKey' => (string) $productKey,
+        'model' => $modelLabel,
+        'quantity' => count($units),
+        'timesUsed' => (int) ($timesUsedLast30DaysByProduct[$normalizedProductKey] ?? 0),
+        'statusCounts' => [],
+        'units' => []
+    ];
 
     foreach ($units as $unit) {
         $serial = max(0, (int) ($unit['serial'] ?? 0));
         $statusValue = normalize_equipment_status($unit['status'] ?? 'available');
         $inUseRequired = max(0, (int) ($equipmentInUseRequirementsByProduct[$normalizedProductKey] ?? 0));
 
-        $equipmentRows[] = [
+        $equipmentRow = [
             'productKey' => (string) $productKey,
             'model' => $modelLabel,
             'serial' => $serial,
@@ -2242,6 +2330,10 @@ foreach ($products as $productKey => $product) {
             'lockedInUse' => $statusValue === 'in-use' && $inUseRequired > 0,
             'timesUsed' => (int) ($timesUsedLast30DaysByProduct[$normalizedProductKey] ?? 0)
         ];
+        $equipmentRows[] = $equipmentRow;
+        $equipmentGroupsByProduct[$productKey]['units'][] = $equipmentRow;
+        $equipmentGroupsByProduct[$productKey]['statusCounts'][$statusValue] =
+            (int) ($equipmentGroupsByProduct[$productKey]['statusCounts'][$statusValue] ?? 0) + 1;
     }
 }
 
@@ -2253,6 +2345,19 @@ usort($equipmentRows, static function ($left, $right) {
 
     return ((int) ($left['serial'] ?? 0)) <=> ((int) ($right['serial'] ?? 0));
 });
+
+$equipmentGroups = array_values($equipmentGroupsByProduct);
+usort($equipmentGroups, static function ($left, $right) {
+    $modelCompare = strnatcasecmp((string) $left['model'], (string) $right['model']);
+    return $modelCompare !== 0 ? $modelCompare : strcmp((string) $left['productKey'], (string) $right['productKey']);
+});
+
+foreach ($equipmentGroups as &$equipmentGroup) {
+    usort($equipmentGroup['units'], static function ($left, $right) {
+        return ((int) $left['serial']) <=> ((int) $right['serial']);
+    });
+}
+unset($equipmentGroup);
 
 $dashboardYearRevenueTotal = 0.0;
 $dashboardYearTransactionsTotal = 0;
@@ -3007,9 +3112,8 @@ usort($archivedEquipmentRows, static function ($left, $right) {
 
 $archivedEquipmentCount = count($archivedEquipmentRows);
 
-if (!save_equipment_inventory_repository($equipmentInventory)) {
-    // Silent fail, just keep going
-}
+// Inventory persistence belongs to the locked mutation/lifecycle paths. Saving
+// this render snapshot could overwrite an edit or booking made in another tab.
 
 $howItWorksSlots = [];
 for ($slot = 1; $slot <= 4; $slot++) {
@@ -3075,7 +3179,9 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
-    <link rel="stylesheet" href="<?php echo htmlspecialchars($assetBase, ENT_QUOTES, 'UTF-8'); ?>css/style.css?v=20260521-1">
+    <link rel="stylesheet" href="<?php echo htmlspecialchars($assetBase, ENT_QUOTES, 'UTF-8'); ?>css/style.css?v=20260923-1">
+    <link rel="stylesheet" href="<?php echo htmlspecialchars($assetBase, ENT_QUOTES, 'UTF-8'); ?>css/transaction-history.css?v=20260923-1">
+    <link rel="stylesheet" href="<?php echo htmlspecialchars($assetBase, ENT_QUOTES, 'UTF-8'); ?>css/admin-equipment.css?v=20260923-1">
 </head>
 <body
     class="home-page-customer admin-dashboard-page"
@@ -3197,16 +3303,28 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
                 </p>
             <?php endif; ?>
 
-            <div class="admin-equipments-table-wrap" role="region" aria-label="Equipments list">
-                <table class="admin-equipments-table">
+            <p class="admin-equipment-intro">View quantities by model. Expand a model to manage individual unit IDs and statuses. Booking dates determine rental availability.</p>
+
+            <div class="admin-equipment-toolbar">
+                <div class="admin-equipment-search-field">
+                    <label for="admin-equipment-search">Find equipment</label>
+                    <input id="admin-equipment-search" type="search" placeholder="Search model or unit ID" data-equipment-search autocomplete="off">
+                </div>
+                <button class="admin-equipment-toggle-all" type="button" data-equipment-toggle-all>Expand all models</button>
+                <p class="admin-equipment-results" data-equipment-results role="status" aria-live="polite"><?php echo count($equipmentGroups); ?> model(s) &middot; <?php echo count($equipmentRows); ?> units</p>
+            </div>
+
+            <p class="admin-equipment-scroll-hint" id="admin-equipment-scroll-hint">Scroll sideways to view all columns.</p>
+            <div class="admin-equipments-table-wrap admin-equipment-grouped-wrap" role="region" aria-label="Equipment quantities by model" aria-describedby="admin-equipment-scroll-hint" tabindex="0">
+                <table class="admin-equipments-table admin-equipment-grouped-table">
                     <thead>
                         <tr>
-                            <th scope="col">UNIT-ID</th>
                             <th scope="col">MODEL</th>
-                            <th scope="col">TIMES USED (last 30 days)</th>
+                            <th scope="col">QUANTITY</th>
+                            <th scope="col">MODEL USES <span class="admin-equipment-heading-note">last 30 days</span></th>
                             <th scope="col">
                                 <span class="admin-equipments-status-head">
-                                    <span>STATUS</span>
+                                    <span>UNIT STATUSES</span>
                                     <?php if (!$isStaffSession): ?>
                                         <button class="admin-equipments-status-manage" type="button" data-admin-equipment-status-open aria-label="Manage equipment statuses" title="Manage statuses">&#9881;</button>
                                     <?php endif; ?>
@@ -3216,93 +3334,119 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
                         </tr>
                     </thead>
                     <tbody>
-                        <?php if ($equipmentRows): ?>
-                            <?php foreach ($equipmentRows as $equipmentRow): ?>
+                        <?php if ($equipmentGroups): ?>
+                            <?php foreach ($equipmentGroups as $equipmentGroupIndex => $equipmentGroup): ?>
                                 <?php
-                                    $equipmentProductKey = (string) ($equipmentRow['productKey'] ?? '');
-                                    $equipmentSerial = (int) ($equipmentRow['serial'] ?? 0);
-                                    $equipmentUnitCount = (int) ($equipmentUnitCountsByProduct[$equipmentProductKey] ?? 0);
-                                    $equipmentStatusLocked = !empty($equipmentRow['lockedInUse']);
+                                    $equipmentProductKey = (string) $equipmentGroup['productKey'];
+                                    $equipmentUnitCount = (int) $equipmentGroup['quantity'];
+                                    $equipmentGroupId = 'equipment-units-' . $equipmentGroupIndex;
+                                    $equipmentSearchText = $equipmentGroup['model'] . ' ' . implode(' ', array_column($equipmentGroup['units'], 'unitId'));
                                 ?>
-                                <tr>
-                                    <td><?php echo htmlspecialchars((string) ($equipmentRow['unitId'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
-                                    <td><?php echo htmlspecialchars((string) ($equipmentRow['model'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
-                                    <td><?php echo htmlspecialchars((string) ((int) ($equipmentRow['timesUsed'] ?? 0)), ENT_QUOTES, 'UTF-8'); ?></td>
+                                <tr class="admin-equipment-model-row" data-equipment-group data-product-key="<?php echo htmlspecialchars($equipmentProductKey, ENT_QUOTES, 'UTF-8'); ?>" data-search="<?php echo htmlspecialchars($equipmentSearchText, ENT_QUOTES, 'UTF-8'); ?>" data-quantity="<?php echo $equipmentUnitCount; ?>">
+                                    <th scope="row">
+                                        <button class="admin-equipment-expand" type="button" data-equipment-expand aria-expanded="false" aria-controls="<?php echo $equipmentGroupId; ?>">
+                                            <span class="admin-equipment-chevron" aria-hidden="true">&#8250;</span>
+                                            <span><?php echo htmlspecialchars((string) $equipmentGroup['model'], ENT_QUOTES, 'UTF-8'); ?><small data-equipment-expand-label>View unit IDs</small></span>
+                                        </button>
+                                    </th>
+                                    <td><strong class="admin-equipment-quantity"><?php echo $equipmentUnitCount; ?></strong><span class="admin-equipment-unit-label"><?php echo $equipmentUnitCount === 1 ? 'unit' : 'units'; ?></span></td>
+                                    <td><?php echo (int) $equipmentGroup['timesUsed']; ?></td>
                                     <td>
-                                        <form class="admin-equipments-status-form" method="post" action="">
-                                            <input type="hidden" name="admin_action" value="equipment_update_status">
-                                            <input type="hidden" name="product_key" value="<?php echo htmlspecialchars($equipmentProductKey, ENT_QUOTES, 'UTF-8'); ?>">
-                                            <input type="hidden" name="serial" value="<?php echo htmlspecialchars((string) $equipmentSerial, ENT_QUOTES, 'UTF-8'); ?>">
-
-                                            <label class="sr-only" for="equipment-status-<?php echo htmlspecialchars($equipmentProductKey, ENT_QUOTES, 'UTF-8'); ?>-<?php echo htmlspecialchars((string) $equipmentSerial, ENT_QUOTES, 'UTF-8'); ?>">Status</label>
-                                            <select class="admin-equipments-status" id="equipment-status-<?php echo htmlspecialchars($equipmentProductKey, ENT_QUOTES, 'UTF-8'); ?>-<?php echo htmlspecialchars((string) $equipmentSerial, ENT_QUOTES, 'UTF-8'); ?>" name="status" onchange="this.form.submit()" <?php echo $equipmentStatusLocked ? 'disabled' : ''; ?> aria-label="<?php echo $equipmentStatusLocked ? 'Status locked to In Use while booking is ongoing' : 'Status'; ?>">
-                                                <?php foreach ($equipmentStatusLabels as $statusValue => $statusLabel): ?>
-                                                    <?php
-                                                        $isInUseStatusOption = (string) $statusValue === 'in-use';
-                                                        $isCurrentEquipmentStatus = (string) ($equipmentRow['status'] ?? '') === (string) $statusValue;
-                                                    ?>
-                                                    <option value="<?php echo htmlspecialchars((string) $statusValue, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $isCurrentEquipmentStatus ? 'selected' : ''; ?> <?php echo $isInUseStatusOption ? 'disabled' : ''; ?>><?php echo htmlspecialchars((string) $statusLabel, ENT_QUOTES, 'UTF-8'); ?><?php echo $isInUseStatusOption ? ' (AUTO)' : ''; ?></option>
-                                                <?php endforeach; ?>
-                                            </select>
-                                        </form>
+                                        <div class="admin-equipment-status-summary">
+                                            <?php foreach ($equipmentGroup['statusCounts'] as $statusValue => $statusCount): ?>
+                                                <span class="admin-equipment-status-count<?php echo $statusValue === 'available' ? ' is-available' : ($statusValue === 'in-use' ? ' is-in-use' : ''); ?>"><?php echo (int) $statusCount; ?> <?php echo htmlspecialchars(ucwords(str_replace('-', ' ', (string) $statusValue)), ENT_QUOTES, 'UTF-8'); ?></span>
+                                            <?php endforeach; ?>
+                                            <?php if (!$equipmentUnitCount): ?><span>No active units</span><?php endif; ?>
+                                        </div>
                                     </td>
                                     <td>
                                         <?php if ($isStaffSession): ?>
                                             <span class="admin-equipments-actions-disabled">Status only</span>
                                         <?php else: ?>
-                                            <div class="admin-equipments-actions">
-                                                <form method="post" action="" class="admin-equipments-action-form">
-                                                    <input type="hidden" name="admin_action" value="equipment_add_quantity">
-                                                    <input type="hidden" name="product_key" value="<?php echo htmlspecialchars($equipmentProductKey, ENT_QUOTES, 'UTF-8'); ?>">
-                                                    <input type="hidden" name="quantity" value="1">
-                                                    <button
-                                                        class="admin-equipments-action admin-equipments-action-add"
-                                                        type="submit"
-                                                        data-admin-equipment-add
-                                                        data-model="<?php echo htmlspecialchars((string) ($equipmentRow['model'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
-                                                        title="Add quantity"
-                                                        aria-label="Add quantity to <?php echo htmlspecialchars((string) ($equipmentRow['model'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
-                                                    >+</button>
-                                                </form>
-
-                                                <form method="post" action="" class="admin-equipments-action-form">
-                                                    <input type="hidden" name="admin_action" value="equipment_remove_unit">
-                                                    <input type="hidden" name="product_key" value="<?php echo htmlspecialchars($equipmentProductKey, ENT_QUOTES, 'UTF-8'); ?>">
-                                                    <input type="hidden" name="serial" value="<?php echo htmlspecialchars((string) $equipmentSerial, ENT_QUOTES, 'UTF-8'); ?>">
-                                                    <button
-                                                        class="admin-equipments-action admin-equipments-action-remove"
-                                                        type="submit"
-                                                        data-admin-equipment-remove
-                                                        data-will-archive="<?php echo $equipmentUnitCount <= 1 ? 'true' : 'false'; ?>"
-                                                        data-model="<?php echo htmlspecialchars((string) ($equipmentRow['model'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
-                                                        data-unit-id="<?php echo htmlspecialchars((string) ($equipmentRow['unitId'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
-                                                        title="<?php echo $equipmentUnitCount <= 1 ? 'Remove last quantity and archive featured product' : 'Remove quantity'; ?>"
-                                                        aria-label="<?php echo $equipmentUnitCount <= 1 ? 'Remove last quantity and archive featured product' : 'Remove quantity'; ?>"
-                                                    >&times;</button>
-                                                </form>
-                                            </div>
+                                            <form method="post" action="" class="admin-equipments-action-form">
+                                                <input type="hidden" name="admin_action" value="equipment_add_quantity">
+                                                <input type="hidden" name="product_key" value="<?php echo htmlspecialchars($equipmentProductKey, ENT_QUOTES, 'UTF-8'); ?>">
+                                                <input type="hidden" name="quantity" value="1">
+                                                <button class="admin-equipments-action admin-equipments-action-add admin-equipment-add-units" type="submit" data-admin-equipment-add data-model="<?php echo htmlspecialchars((string) $equipmentGroup['model'], ENT_QUOTES, 'UTF-8'); ?>" aria-label="Add units to <?php echo htmlspecialchars((string) $equipmentGroup['model'], ENT_QUOTES, 'UTF-8'); ?>">+ Add units</button>
+                                            </form>
                                         <?php endif; ?>
+                                    </td>
+                                </tr>
+                                <tr class="admin-equipment-detail-row" id="<?php echo $equipmentGroupId; ?>" hidden>
+                                    <td colspan="5">
+                                        <div class="admin-equipment-unit-panel">
+                                            <p class="admin-equipment-unit-title"><?php echo htmlspecialchars((string) $equipmentGroup['model'], ENT_QUOTES, 'UTF-8'); ?> &middot; Individual units</p>
+                                            <table class="admin-equipment-unit-table">
+                                                <thead><tr><th scope="col">Unit ID</th><th scope="col">Status</th><th scope="col">Action</th></tr></thead>
+                                                <tbody>
+                                                    <?php foreach ($equipmentGroup['units'] as $equipmentRow): ?>
+                                                        <?php
+                                                            $equipmentSerial = (int) $equipmentRow['serial'];
+                                                            $equipmentStatusLocked = !empty($equipmentRow['lockedInUse']);
+                                                            $equipmentStatusId = $equipmentGroupId . '-status-' . $equipmentSerial;
+                                                        ?>
+                                                        <tr>
+                                                            <th scope="row"><?php echo htmlspecialchars((string) $equipmentRow['unitId'], ENT_QUOTES, 'UTF-8'); ?></th>
+                                                            <td>
+                                                                <form class="admin-equipments-status-form" method="post" action="">
+                                                                    <input type="hidden" name="admin_action" value="equipment_update_status">
+                                                                    <input type="hidden" name="product_key" value="<?php echo htmlspecialchars($equipmentProductKey, ENT_QUOTES, 'UTF-8'); ?>">
+                                                                    <input type="hidden" name="serial" value="<?php echo $equipmentSerial; ?>">
+                                                                    <label class="sr-only" for="<?php echo $equipmentStatusId; ?>">Status for <?php echo htmlspecialchars((string) $equipmentRow['unitId'], ENT_QUOTES, 'UTF-8'); ?></label>
+                                                                    <select class="admin-equipments-status" id="<?php echo $equipmentStatusId; ?>" name="status" onchange="this.form.submit()" <?php echo $equipmentStatusLocked ? 'disabled' : ''; ?>>
+                                                                        <?php foreach ($equipmentStatusLabels as $statusValue => $statusLabel): ?>
+                                                                            <option value="<?php echo htmlspecialchars((string) $statusValue, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $equipmentRow['status'] === (string) $statusValue ? 'selected' : ''; ?> <?php echo (string) $statusValue === 'in-use' ? 'disabled' : ''; ?>><?php echo htmlspecialchars((string) $statusLabel, ENT_QUOTES, 'UTF-8'); ?><?php echo (string) $statusValue === 'in-use' ? ' (AUTO)' : ''; ?></option>
+                                                                        <?php endforeach; ?>
+                                                                    </select>
+                                                                </form>
+                                                                <?php if ($equipmentStatusLocked): ?><small class="admin-equipment-lock-note">Locked by an ongoing booking</small><?php endif; ?>
+                                                            </td>
+                                                            <td>
+                                                                <?php if ($isStaffSession): ?>
+                                                                    <span class="admin-equipments-actions-disabled">Status only</span>
+                                                                <?php else: ?>
+                                                                    <form method="post" action="" class="admin-equipments-action-form">
+                                                                        <input type="hidden" name="admin_action" value="equipment_remove_unit">
+                                                                        <input type="hidden" name="product_key" value="<?php echo htmlspecialchars($equipmentProductKey, ENT_QUOTES, 'UTF-8'); ?>">
+                                                                        <input type="hidden" name="serial" value="<?php echo $equipmentSerial; ?>">
+                                                                        <button class="admin-equipments-action admin-equipments-action-remove admin-equipment-remove-unit" type="submit" data-admin-equipment-remove data-will-archive="<?php echo $equipmentUnitCount <= 1 ? 'true' : 'false'; ?>" data-model="<?php echo htmlspecialchars((string) $equipmentRow['model'], ENT_QUOTES, 'UTF-8'); ?>" data-unit-id="<?php echo htmlspecialchars((string) $equipmentRow['unitId'], ENT_QUOTES, 'UTF-8'); ?>" aria-label="Remove <?php echo htmlspecialchars((string) $equipmentRow['unitId'], ENT_QUOTES, 'UTF-8'); ?>" <?php echo $equipmentStatusLocked ? 'disabled title="Cannot remove a unit in an ongoing booking"' : ''; ?>>Remove</button>
+                                                                    </form>
+                                                                <?php endif; ?>
+                                                            </td>
+                                                        </tr>
+                                                    <?php endforeach; ?>
+                                                    <?php if (!$equipmentUnitCount): ?><tr><td colspan="3">No active units. Add units to make this model rentable.</td></tr><?php endif; ?>
+                                                </tbody>
+                                            </table>
+                                        </div>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
                         <?php else: ?>
                             <tr>
-                                <td colspan="5">No active equipment units.</td>
+                                <td colspan="5">No equipment models yet.</td>
                             </tr>
                         <?php endif; ?>
                     </tbody>
                 </table>
+                <p class="admin-equipment-empty-search" data-equipment-empty-search hidden>No matching equipment. Try another model or unit ID.</p>
             </div>
         </section>
 
         <section class="admin-bookings-shell" data-admin-dashboard-panel="bookings" hidden>
-            <div class="admin-bookings-table-wrap" role="region" aria-label="Reservations list">
+            <h2 class="transaction-history-title">Reservations &amp; Transaction History</h2>
+            <?php if (!empty($adminBookingFlash['message'])): ?>
+                <p class="admin-booking-flash<?php echo ($adminBookingFlash['type'] ?? '') === 'error' ? ' is-error' : ''; ?>" role="<?php echo ($adminBookingFlash['type'] ?? '') === 'error' ? 'alert' : 'status'; ?>"><?php echo htmlspecialchars((string) $adminBookingFlash['message'], ENT_QUOTES, 'UTF-8'); ?></p>
+            <?php endif; ?>
+            <?php $transactionHistoryScope = 'admin'; require __DIR__ . '/transaction_history_controls.php'; ?>
+            <div class="admin-bookings-table-wrap" role="region" aria-label="Reservations list; scroll horizontally to see all columns" tabindex="0">
                 <table class="admin-bookings-table">
                     <thead>
                         <tr>
                             <th scope="col">NAME</th>
                             <th scope="col">ORDER NUMBER</th>
-                            <th scope="col">TIME STAMP</th>
+                            <th scope="col">CAMERA / PACKAGE</th>
+                            <th scope="col">DATE PLACED</th>
                             <th scope="col">STATUS</th>
                         </tr>
                     </thead>
@@ -3319,6 +3463,7 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
                                         </span>
                                     </td>
                                     <td><?php echo htmlspecialchars((string) ($booking['order'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
+                                    <td class="admin-bookings-camera-col"><?php echo htmlspecialchars((string) ($booking['itemsSummary'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
                                     <td><?php echo htmlspecialchars((string) ($booking['time'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
                                     <td>
                                         <span class="admin-bookings-status <?php echo htmlspecialchars((string) ($booking['statusClass'] ?? 'status-pending'), ENT_QUOTES, 'UTF-8'); ?>">
@@ -3327,11 +3472,10 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
-                        <?php else: ?>
-                            <tr>
-                                <td colspan="4">No reservations yet.</td>
-                            </tr>
                         <?php endif; ?>
+                        <tr class="admin-bookings-empty" data-admin-bookings-empty <?php echo $dashboardBookings ? 'hidden' : ''; ?>>
+                            <td colspan="5">No reservations yet.</td>
+                        </tr>
                     </tbody>
                 </table>
             </div>
@@ -3455,6 +3599,8 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
                     <input type="hidden" name="redirect" value="<?php echo htmlspecialchars($adminHomePath . '?admin_view=bookings', ENT_QUOTES, 'UTF-8'); ?>">
                     <input type="hidden" name="next_status" value="" data-admin-booking-next-status>
                     <input type="hidden" name="cancel_reason" value="" data-admin-booking-cancel-reason-input>
+                    <input type="hidden" name="reason_choice" value="" data-admin-booking-reason-choice-input>
+                    <input type="hidden" name="booking_action_token" value="<?php echo htmlspecialchars($_SESSION['booking_action_token'], ENT_QUOTES, 'UTF-8'); ?>">
                     <input type="hidden" name="refund_proof_data_url" value="" data-admin-booking-refund-proof-input>
                     <button type="submit" name="next_status" value="approved" class="admin-booking-action is-approve" data-admin-booking-status-submit>Approve</button>
                     <button type="button" class="admin-booking-action is-reject" data-admin-booking-review-open data-admin-booking-review-mode="rejected">Reject</button>
@@ -3485,7 +3631,20 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
                     <p><strong>Customer GCash Number:</strong> <span data-admin-booking-review-customer-gcash-number>-</span></p>
                 </div>
 
-                <textarea class="admin-booking-review-textarea" data-admin-booking-review-reason maxlength="500" placeholder="Enter decision reason"></textarea>
+                <label class="admin-booking-reason-label" for="admin-booking-review-choice">Reason <span>(required)</span></label>
+                <select id="admin-booking-review-choice" class="admin-booking-reason-select" data-admin-booking-review-choice aria-describedby="admin-booking-review-error">
+                    <option value="">Select a reason</option>
+                    <?php foreach (['rejected', 'refunded'] as $reasonStatus): ?>
+                        <?php foreach (booking_reason_options($reasonStatus) as $reasonKey => $reasonLabel): ?>
+                            <option value="<?php echo htmlspecialchars($reasonKey, ENT_QUOTES, 'UTF-8'); ?>" data-reason-status="<?php echo $reasonStatus; ?>"><?php echo htmlspecialchars($reasonLabel, ENT_QUOTES, 'UTF-8'); ?></option>
+                        <?php endforeach; ?>
+                    <?php endforeach; ?>
+                    <option value="others">Others</option>
+                </select>
+                <div class="admin-booking-reason-custom" data-admin-booking-review-custom hidden>
+                    <label class="admin-booking-reason-label" for="admin-booking-review-reason">Tell the customer why <span>(up to 500 characters)</span></label>
+                    <textarea id="admin-booking-review-reason" class="admin-booking-review-textarea" data-admin-booking-review-reason maxlength="500" placeholder="Enter decision reason" aria-describedby="admin-booking-review-error" disabled></textarea>
+                </div>
 
                 <div class="admin-booking-review-proof-wrap" data-admin-booking-review-proof-wrap hidden>
                     <input type="file" accept="image/*" data-admin-booking-review-proof-file hidden>
@@ -3496,7 +3655,7 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
                     <p class="admin-booking-review-proof-note">Upload the refund receipt screenshot as proof for the customer.</p>
                 </div>
 
-                <p class="admin-booking-review-error" data-admin-booking-review-error hidden></p>
+                <p id="admin-booking-review-error" class="admin-booking-review-error" data-admin-booking-review-error role="alert" hidden></p>
 
                 <div class="admin-booking-review-actions">
                     <button type="button" class="admin-booking-review-action" data-admin-booking-review-close>Back</button>
@@ -3513,8 +3672,19 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
                 </div>
 
                 <p class="admin-booking-cancel-copy">Provide a cancellation reason. This will be visible to the customer in Order Status.</p>
-                <textarea class="admin-booking-cancel-textarea" data-admin-booking-cancel-reason maxlength="500" placeholder="Enter cancellation reason"></textarea>
-                <p class="admin-booking-cancel-error" data-admin-booking-cancel-error hidden></p>
+                <label class="admin-booking-reason-label" for="admin-booking-cancel-choice">Reason <span>(required)</span></label>
+                <select id="admin-booking-cancel-choice" class="admin-booking-reason-select" data-admin-booking-cancel-choice aria-describedby="admin-booking-cancel-error">
+                    <option value="">Select a reason</option>
+                    <?php foreach (booking_reason_options('canceled') as $reasonKey => $reasonLabel): ?>
+                        <option value="<?php echo htmlspecialchars($reasonKey, ENT_QUOTES, 'UTF-8'); ?>"><?php echo htmlspecialchars($reasonLabel, ENT_QUOTES, 'UTF-8'); ?></option>
+                    <?php endforeach; ?>
+                    <option value="others">Others</option>
+                </select>
+                <div class="admin-booking-reason-custom" data-admin-booking-cancel-custom hidden>
+                    <label class="admin-booking-reason-label" for="admin-booking-cancel-reason">Tell the customer why <span>(up to 500 characters)</span></label>
+                    <textarea id="admin-booking-cancel-reason" class="admin-booking-cancel-textarea" data-admin-booking-cancel-reason maxlength="500" placeholder="Enter cancellation reason" aria-describedby="admin-booking-cancel-error" disabled></textarea>
+                </div>
+                <p id="admin-booking-cancel-error" class="admin-booking-cancel-error" data-admin-booking-cancel-error role="alert" hidden></p>
 
                 <div class="admin-booking-cancel-actions">
                     <button type="button" class="admin-booking-cancel-action" data-admin-booking-cancel-close>Back</button>
@@ -4865,7 +5035,9 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
         }
         document.addEventListener('DOMContentLoaded', updateFieldLabels);
     </script>
-    <script src="<?php echo htmlspecialchars($assetBase, ENT_QUOTES, 'UTF-8'); ?>js/script.js?v=20260520-1"></script>
+    <script src="<?php echo htmlspecialchars($assetBase, ENT_QUOTES, 'UTF-8'); ?>js/transaction-history.js?v=20260923-1"></script>
+    <script src="<?php echo htmlspecialchars($assetBase, ENT_QUOTES, 'UTF-8'); ?>js/script.js?v=20260923-1"></script>
+    <script src="<?php echo htmlspecialchars($assetBase, ENT_QUOTES, 'UTF-8'); ?>js/admin-equipment.js?v=20260923-1"></script>
 </body>
 </html>
 

@@ -19,6 +19,7 @@ if (strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
 
 require dirname(__DIR__, 2) . '/config/products_repository.php';
 require dirname(__DIR__, 2) . '/config/equipment_inventory_repository.php';
+require_once dirname(__DIR__, 2) . '/config/customer_orders_repository.php';
 
 $payloadRaw = file_get_contents('php://input');
 $payload = json_decode((string) $payloadRaw, true);
@@ -33,17 +34,27 @@ if ($archiveKey === '') {
     exit;
 }
 
-$products = load_products_repository();
-$archivedProducts = load_archived_products_repository();
-$equipmentInventory = sync_equipment_inventory_with_products(
-    $products,
-    load_equipment_inventory_repository(),
-    12
-);
-$archivedEquipmentUnits = load_archived_equipment_units_repository();
 $projectRoot = dirname(__DIR__, 2);
 
 try {
+    $restoreMutationLock = customer_orders_repository_acquire_lock();
+    if ($restoreMutationLock === null) {
+        http_response_code(503);
+        echo json_encode(['ok' => false, 'message' => 'Inventory is busy. Please try restoring this product again.']);
+        exit;
+    }
+
+    $products = load_products_repository();
+    $archivedProducts = load_archived_products_repository();
+    // Lifecycle reconciliation may update in-use statuses; read inventory afterward.
+    load_customer_orders_repository();
+    $equipmentInventory = sync_equipment_inventory_with_products(
+        $products,
+        load_equipment_inventory_repository(),
+        12
+    );
+    $archivedEquipmentUnits = load_archived_equipment_units_repository();
+
     $result = restore_archived_product_record($products, $archivedProducts, $archiveKey, $projectRoot);
 
     if (!save_products_repository($result['products'])) {

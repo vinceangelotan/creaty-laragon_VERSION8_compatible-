@@ -1,4 +1,24 @@
 document.addEventListener("DOMContentLoaded", function () {
+    // Half-open rental intervals: a return at 10:00 frees capacity for a 10:00 start.
+    function peakReservedQuantity(intervals, start, end) {
+        var events = [];
+        (intervals || []).forEach(function (interval) {
+            if (!interval) { return; }
+            var from = Math.max(start, Number(interval.startTs));
+            var to = Math.min(end, Number(interval.endTs));
+            var quantity = Math.max(1, Number.parseInt(interval.qty, 10) || 1);
+            if (!Number.isFinite(from) || !Number.isFinite(to) || from >= to) { return; }
+            events.push({ time: from, delta: quantity }, { time: to, delta: -quantity });
+        });
+        events.sort(function (a, b) { return a.time - b.time || a.delta - b.delta; });
+        var current = 0;
+        var peak = 0;
+        events.forEach(function (event) {
+            current += event.delta;
+            peak = Math.max(peak, current);
+        });
+        return peak;
+    }
     var revealItems = document.querySelectorAll(".reveal");
     var toggleButtons = document.querySelectorAll(".toggle-visibility");
     var authSwitchLinks = document.querySelectorAll("[data-auth-switch]");
@@ -7800,6 +7820,69 @@ document.addEventListener("DOMContentLoaded", function () {
         document.body.classList.toggle("admin-modal-open", hasVisibleUsersModal || hasVisibleEquipmentArchiveModal || hasVisibleEquipmentStatusModal || hasVisibleActionModal || hasVisibleServiceEditModal || hasVisibleEventEditModal || hasVisibleEventThumbsModal || hasVisibleServiceThumbsModal || hasVisibleEventCollectionCreateModal || hasVisibleEventCollectionEditModal || hasVisibleBookingDetailModal || hasVisibleBookingCancelModal || hasVisibleBookingReviewModal || hasVisibleBookingDeliveryModal);
     }
 
+    function bookingReasonControl(backdrop, kind) {
+        if (!backdrop) { return null; }
+        return {
+            choice: backdrop.querySelector('[data-admin-booking-' + kind + '-choice]'),
+            custom: backdrop.querySelector('[data-admin-booking-' + kind + '-custom]'),
+            input: backdrop.querySelector('[data-admin-booking-' + kind + '-reason]')
+        };
+    }
+
+    function syncBookingReasonControl(control, focus) {
+        if (!control || !control.choice || !control.input) { return; }
+        var isOther = control.choice.value === 'others';
+        control.custom.hidden = !isOther;
+        control.input.disabled = !isOther;
+        control.input.required = isOther;
+        control.choice.setAttribute('aria-invalid', 'false');
+        control.input.setAttribute('aria-invalid', 'false');
+        if (focus && isOther) { control.input.focus(); }
+    }
+
+    function resetBookingReasonControl(control, status) {
+        if (!control || !control.choice) { return; }
+        control.choice.value = '';
+        control.input.value = '';
+        Array.prototype.forEach.call(control.choice.options, function (option) {
+            var forStatus = option.getAttribute('data-reason-status');
+            option.hidden = Boolean(forStatus && forStatus !== status);
+            option.disabled = option.hidden;
+        });
+        syncBookingReasonControl(control, false);
+    }
+
+    function readBookingReasonControl(control) {
+        if (!control || !control.choice) { return ''; }
+        var option = control.choice.options[control.choice.selectedIndex];
+        if (!option || option.disabled || !option.value) { return ''; }
+        return option.value === 'others' ? String(control.input.value || '').trim() : option.textContent.trim();
+    }
+
+    function focusBookingReasonError(control) {
+        if (!control || !control.choice) { return; }
+        var field = control.choice.value === 'others' ? control.input : control.choice;
+        field.setAttribute('aria-invalid', 'true');
+        field.focus();
+    }
+
+    function setBookingReasonChoice(control) {
+        var field = adminBookingStatusForm.querySelector('[data-admin-booking-reason-choice-input]');
+        if (field) { field.value = control && control.choice ? control.choice.value : ''; }
+    }
+
+    var cancelReasonControl = bookingReasonControl(adminBookingCancelBackdrop, 'cancel');
+    var reviewReasonControl = bookingReasonControl(adminBookingReviewBackdrop, 'review');
+    var bookingReasonReturnFocus = null;
+    [cancelReasonControl, reviewReasonControl].forEach(function (control) {
+        if (!control || !control.choice) { return; }
+        control.choice.addEventListener('change', function () {
+            syncBookingReasonControl(control, true);
+            if (control === cancelReasonControl) { setAdminBookingCancelError(''); }
+            else { setAdminBookingReviewError(''); }
+        });
+    });
+
     function setAdminBookingCancelError(message) {
         if (!adminBookingCancelError) {
             return;
@@ -7815,6 +7898,7 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
         }
 
+        var wasVisible = !adminBookingCancelBackdrop.hidden;
         adminBookingCancelBackdrop.hidden = true;
         setAdminBookingCancelError("");
 
@@ -7827,6 +7911,9 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         syncAdminModalBodyLock();
+        if (wasVisible && bookingReasonReturnFocus && bookingReasonReturnFocus.isConnected) {
+            bookingReasonReturnFocus.focus();
+        }
     }
 
     function openAdminBookingCancelModal() {
@@ -7839,19 +7926,15 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
         }
 
-        if (adminBookingCancelReasonInput) {
-            adminBookingCancelReasonInput.value = activeAdminBookingCancelReason;
-        }
+        resetBookingReasonControl(cancelReasonControl, 'canceled');
+        bookingReasonReturnFocus = document.activeElement;
 
         setAdminBookingCancelError("");
         adminBookingCancelBackdrop.hidden = false;
         syncAdminModalBodyLock();
 
         window.requestAnimationFrame(function () {
-            if (adminBookingCancelReasonInput) {
-                adminBookingCancelReasonInput.focus();
-                adminBookingCancelReasonInput.select();
-            }
+            if (cancelReasonControl && cancelReasonControl.choice) { cancelReasonControl.choice.focus(); }
         });
     }
 
@@ -7880,6 +7963,7 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
         }
 
+        var wasVisible = !adminBookingReviewBackdrop.hidden;
         adminBookingReviewBackdrop.hidden = true;
         activeAdminBookingReviewMode = "";
         setAdminBookingReviewError("");
@@ -7923,6 +8007,9 @@ document.addEventListener("DOMContentLoaded", function () {
 
         resetAdminBookingReviewProofSelection();
         syncAdminModalBodyLock();
+        if (wasVisible && bookingReasonReturnFocus && bookingReasonReturnFocus.isConnected) {
+            bookingReasonReturnFocus.focus();
+        }
     }
 
     function openAdminBookingReviewModal(mode) {
@@ -7941,6 +8028,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
         var normalizedMode = mode === "refunded" ? "refunded" : "rejected";
         activeAdminBookingReviewMode = normalizedMode;
+        resetBookingReasonControl(reviewReasonControl, normalizedMode);
+        bookingReasonReturnFocus = document.activeElement;
 
         if (adminBookingReviewTitle) {
             adminBookingReviewTitle.textContent = normalizedMode === "refunded"
@@ -7990,10 +8079,7 @@ document.addEventListener("DOMContentLoaded", function () {
         syncAdminModalBodyLock();
 
         window.requestAnimationFrame(function () {
-            if (adminBookingReviewReasonInput) {
-                adminBookingReviewReasonInput.focus();
-                adminBookingReviewReasonInput.select();
-            }
+            if (reviewReasonControl && reviewReasonControl.choice) { reviewReasonControl.choice.focus(); }
         });
     }
 
@@ -10045,7 +10131,7 @@ document.addEventListener("DOMContentLoaded", function () {
             }
 
             var orderId = String(adminBookingStatusOrderIdInput.value || "").trim();
-            var reasonText = adminBookingCancelReasonInput ? String(adminBookingCancelReasonInput.value || "").trim() : "";
+            var reasonText = readBookingReasonControl(cancelReasonControl);
 
             if (!orderId) {
                 closeAdminBookingCancelModal();
@@ -10053,11 +10139,8 @@ document.addEventListener("DOMContentLoaded", function () {
             }
 
             if (reasonText === "") {
-                setAdminBookingCancelError("Please provide a cancellation reason.");
-
-                if (adminBookingCancelReasonInput) {
-                    adminBookingCancelReasonInput.focus();
-                }
+                setAdminBookingCancelError("Select a reason, or choose Others and enter an explanation.");
+                focusBookingReasonError(cancelReasonControl);
 
                 return;
             }
@@ -10075,6 +10158,7 @@ document.addEventListener("DOMContentLoaded", function () {
             }
 
             adminBookingCancelConfirmButton.disabled = true;
+            setBookingReasonChoice(cancelReasonControl);
             adminBookingStatusForm.submit();
         });
     }
@@ -10137,7 +10221,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
             var orderId = String(adminBookingStatusOrderIdInput.value || "").trim();
             var reviewMode = activeAdminBookingReviewMode === "refunded" ? "refunded" : "rejected";
-            var reasonText = adminBookingReviewReasonInput ? String(adminBookingReviewReasonInput.value || "").trim() : "";
+            var reasonText = readBookingReasonControl(reviewReasonControl);
             var confirmLabel = reviewMode === "refunded" ? "Confirm Refund" : "Confirm Reject";
 
             if (!orderId) {
@@ -10146,11 +10230,8 @@ document.addEventListener("DOMContentLoaded", function () {
             }
 
             if (reasonText === "") {
-                setAdminBookingReviewError("Please provide a reason.");
-
-                if (adminBookingReviewReasonInput) {
-                    adminBookingReviewReasonInput.focus();
-                }
+                setAdminBookingReviewError("Select a reason, or choose Others and enter an explanation.");
+                focusBookingReasonError(reviewReasonControl);
 
                 return;
             }
@@ -10163,7 +10244,9 @@ document.addEventListener("DOMContentLoaded", function () {
             }
 
             var submitDecision = function () {
+                if (adminBookingReviewBackdrop.hidden || activeAdminBookingReviewMode !== reviewMode) { return; }
                 adminBookingReviewConfirmButton.disabled = true;
+                setBookingReasonChoice(reviewReasonControl);
                 adminBookingStatusForm.submit();
             };
 
@@ -10185,6 +10268,7 @@ document.addEventListener("DOMContentLoaded", function () {
             setAdminBookingReviewError("");
 
             reader.onload = function (loadEvent) {
+                if (adminBookingReviewBackdrop.hidden || activeAdminBookingReviewMode !== reviewMode) { return; }
                 var imageDataUrl = String(loadEvent && loadEvent.target && loadEvent.target.result ? loadEvent.target.result : "");
 
                 if (imageDataUrl.indexOf("data:image/") !== 0) {
@@ -10375,7 +10459,23 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     document.addEventListener("keydown", function (event) {
-        if (event.key !== "Escape") {
+        var reasonBackdrop = adminBookingReviewBackdrop && !adminBookingReviewBackdrop.hidden
+            ? adminBookingReviewBackdrop
+            : (adminBookingCancelBackdrop && !adminBookingCancelBackdrop.hidden ? adminBookingCancelBackdrop : null);
+        if (reasonBackdrop && event.key === 'Tab') {
+            var focusable = Array.from(reasonBackdrop.querySelectorAll('button, select, textarea, input, a[href]')).filter(function (node) {
+                return !node.disabled && node.getClientRects().length > 0 && node.tabIndex >= 0;
+            });
+            var first = focusable[0];
+            var last = focusable[focusable.length - 1];
+            if (first && (!reasonBackdrop.contains(document.activeElement) || (event.shiftKey && document.activeElement === first) || (!event.shiftKey && document.activeElement === last))) {
+                event.preventDefault();
+                (event.shiftKey ? last : first).focus();
+            }
+        }
+        if (event.key !== "Escape") { return; }
+        if (adminBookingReviewBackdrop && !adminBookingReviewBackdrop.hidden) {
+            closeAdminBookingReviewModal();
             return;
         }
 
@@ -14628,10 +14728,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         function getHistoryEligibleOrders() {
-            return getStoredOrders().filter(function (order) {
-                var statusToken = String(order && order.statusToken ? order.statusToken : "").toLowerCase().trim();
-                return statusToken === "completed" || statusToken === "ongoing" || statusToken === "return";
-            });
+            return getStoredOrders();
         }
 
         function renderHistoryList() {
@@ -14641,10 +14738,16 @@ document.addEventListener("DOMContentLoaded", function () {
 
             historyList.innerHTML = "";
 
-            var orders = getHistoryEligibleOrders();
+            var allOrders = getHistoryEligibleOrders();
+            var orders = window.CreatyTransactionHistory
+                ? window.CreatyTransactionHistory.selectOrders("customer", allOrders)
+                : allOrders;
 
             if (historyEmpty) {
                 historyEmpty.hidden = orders.length > 0;
+                historyEmpty.textContent = allOrders.length
+                    ? "No reservations match these filters. Adjust or reset the filters above."
+                    : "No reservations yet. Your reservations will appear here after checkout.";
             }
 
             orders.forEach(function (order) {
@@ -14706,6 +14809,19 @@ document.addEventListener("DOMContentLoaded", function () {
                 var metaBlock = document.createElement("div");
                 metaBlock.className = "cart-history-meta";
 
+                var placedTimestamp = window.CreatyTransactionHistory
+                    ? window.CreatyTransactionHistory.createdTimestamp(order)
+                    : Date.parse(order.createdAt);
+                var placedDate = new Date(placedTimestamp);
+                if (placedTimestamp !== null && Number.isFinite(placedDate.getTime())) {
+                    var placedLine = document.createElement("p");
+                    placedLine.className = "cart-history-reference";
+                    placedLine.textContent = "Date placed: " + placedDate.toLocaleString("en-PH", {
+                        timeZone: "Asia/Manila", year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit"
+                    });
+                    metaBlock.appendChild(placedLine);
+                }
+
                 var scheduleLine = document.createElement("p");
                 scheduleLine.className = "cart-history-schedule";
                 scheduleLine.textContent = "Receive: "
@@ -14718,6 +14834,13 @@ document.addEventListener("DOMContentLoaded", function () {
                 totalLine.className = "cart-history-price";
                 totalLine.textContent = "Estimated Total: " + formatMoney(calculateHistoryOrderTotal(order));
                 metaBlock.appendChild(totalLine);
+
+                if (String(order.cancelReason || "").trim()) {
+                    var reasonLine = document.createElement("p");
+                    reasonLine.className = "cart-history-reference";
+                    reasonLine.textContent = "Reason: " + String(order.cancelReason).trim();
+                    metaBlock.appendChild(reasonLine);
+                }
 
                 orderCard.appendChild(metaBlock);
 
@@ -14761,16 +14884,19 @@ document.addEventListener("DOMContentLoaded", function () {
                 var actions = document.createElement("div");
                 actions.className = "cart-history-actions";
 
+                var canReReserve = ["completed", "canceled", "rejected", "refunded"].indexOf(String(order.statusToken || "")) !== -1;
                 var actionNote = document.createElement("p");
                 actionNote.className = "cart-history-action-note";
-                actionNote.textContent = "Uses the latest catalog availability and current item pricing.";
+                actionNote.textContent = canReReserve
+                    ? "Uses the latest catalog availability and current item pricing."
+                    : "Manage this reservation and track its progress in Order Status.";
                 actions.appendChild(actionNote);
 
                 var reReserveButton = document.createElement("button");
                 reReserveButton.type = "button";
                 reReserveButton.className = "cart-history-rereserve";
-                reReserveButton.textContent = "RE-RESERVE";
-                reReserveButton.setAttribute("data-cart-history-rereserve", "true");
+                reReserveButton.textContent = canReReserve ? "RE-RESERVE" : "VIEW STATUS";
+                reReserveButton.setAttribute(canReReserve ? "data-cart-history-rereserve" : "data-cart-history-view-status", "true");
                 reReserveButton.setAttribute("data-cart-order-id", String(order.id || ""));
                 actions.appendChild(reReserveButton);
 
@@ -14839,14 +14965,14 @@ document.addEventListener("DOMContentLoaded", function () {
 
         function handleHistoryReReserve(orderId) {
             var targetOrder = findStoredOrderById(orderId);
-            if (!targetOrder) {
+            if (!targetOrder || ["completed", "canceled", "rejected", "refunded"].indexOf(String(targetOrder.statusToken || "")) === -1) {
                 return;
             }
 
             var rebuilt = rebuildCartItemsFromHistoryOrder(targetOrder);
 
             if (!rebuilt.equipmentItems.length && !rebuilt.serviceItem) {
-                bookingNote.textContent = "None of the reservation items are currently available for re-reserve.";
+                showCartToast("These reservation items are currently unavailable for re-reserve.");
                 return;
             }
 
@@ -16179,33 +16305,10 @@ document.addEventListener("DOMContentLoaded", function () {
                 var requiredEnd = Number.isFinite(servicesCartEndTimestamp)
                     ? servicesCartEndTimestamp
                     : (startTimestamp + (requiredDays * 24 * 60 * 60 * 1000));
-                var occupiedQty = 0;
                 var intervals = Array.isArray(equipmentAvailability.reservationsByProduct[productKey])
                     ? equipmentAvailability.reservationsByProduct[productKey]
                     : [];
-
-                intervals.forEach(function (interval) {
-                    if (!interval || typeof interval !== "object") {
-                        return;
-                    }
-
-                    var intervalQtyParsed = Number.parseInt(interval.qty, 10);
-                    var intervalQty = Number.isFinite(intervalQtyParsed) && intervalQtyParsed > 0
-                        ? intervalQtyParsed
-                        : 1;
-                    var intervalStart = Number(interval.startTs);
-                    var intervalEnd = Number(interval.endTs);
-
-                    if (!Number.isFinite(intervalStart) || !Number.isFinite(intervalEnd)) {
-                        return;
-                    }
-
-                    if (startTimestamp >= intervalEnd || requiredEnd <= intervalStart) {
-                        return;
-                    }
-
-                    occupiedQty += intervalQty;
-                });
+                var occupiedQty = peakReservedQuantity(intervals, startTimestamp, requiredEnd);
 
                 return (occupiedQty + requiredQty) <= capacity;
             });
@@ -17339,6 +17442,14 @@ document.addEventListener("DOMContentLoaded", function () {
 
         if (historyList) {
             historyList.addEventListener("click", function (event) {
+                var viewStatusButton = event.target.closest("[data-cart-history-view-status]");
+                if (viewStatusButton) {
+                    orderStatusFocusId = String(viewStatusButton.getAttribute("data-cart-order-id") || "").trim();
+                    activeOrderStatusEntryId = orderStatusFocusId;
+                    setCartView("order-status");
+                    return;
+                }
+
                 var reReserveButton = event.target.closest("[data-cart-history-rereserve]");
                 if (!reReserveButton) {
                     return;
@@ -17509,6 +17620,9 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         renderOrderStatusList();
+        if (window.CreatyTransactionHistory) {
+            window.CreatyTransactionHistory.setRenderer("customer", renderHistoryList);
+        }
         renderHistoryList();
         restoreBookingDefaults();
         enforceReceiveScheduleConstraints(getActiveCartItems());
@@ -17743,30 +17857,7 @@ document.addEventListener("DOMContentLoaded", function () {
             }
 
             var endTs = startTs + (24 * 60 * 60 * 1000);
-            var occupiedQty = 0;
-
-            calendarReservations.forEach(function (reservation) {
-                if (!reservation || typeof reservation !== "object") {
-                    return;
-                }
-
-                var reservationStart = Number(reservation.startTs);
-                var reservationEnd = Number(reservation.endTs);
-                var reservationQtyParsed = Number.parseInt(reservation.qty, 10);
-                var reservationQty = Number.isFinite(reservationQtyParsed) && reservationQtyParsed > 0
-                    ? reservationQtyParsed
-                    : 1;
-
-                if (!Number.isFinite(reservationStart) || !Number.isFinite(reservationEnd)) {
-                    return;
-                }
-
-                if (startTs >= reservationEnd || endTs <= reservationStart) {
-                    return;
-                }
-
-                occupiedQty += reservationQty;
-            });
+            var occupiedQty = peakReservedQuantity(calendarReservations, startTs, endTs);
 
             return (occupiedQty + 1) <= calendarProductCapacity;
         }

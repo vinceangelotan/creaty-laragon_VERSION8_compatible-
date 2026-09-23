@@ -5,6 +5,54 @@ function customer_orders_repository_path()
     return __DIR__ . '/customer_orders.json';
 }
 
+// Keep the returned guard alive through the complete read/check/write operation.
+// Nested repository calls share the lock so automatic transitions cannot overwrite
+// a booking submitted by another request while this request is reading orders.
+function customer_orders_repository_acquire_lock()
+{
+    static $handle = null;
+    static $depth = 0;
+
+    if ($depth === 0) {
+        $handle = @fopen(customer_orders_repository_path() . '.lock', 'c');
+
+        if ($handle === false) {
+            $handle = null;
+            return null;
+        }
+
+        if (!flock($handle, LOCK_EX)) {
+            fclose($handle);
+            $handle = null;
+            return null;
+        }
+    }
+
+    $depth++;
+
+    return new class(function () use (&$handle, &$depth) {
+        $depth--;
+
+        if ($depth === 0 && is_resource($handle)) {
+            flock($handle, LOCK_UN);
+            fclose($handle);
+            $handle = null;
+        }
+    }) {
+        private $release;
+
+        public function __construct($release)
+        {
+            $this->release = $release;
+        }
+
+        public function __destruct()
+        {
+            ($this->release)();
+        }
+    };
+}
+
 function customer_order_timezone_name()
 {
     return 'Asia/Manila';
@@ -202,7 +250,7 @@ function normalize_customer_order_handover_confirmed_by($value)
 {
     $token = strtolower(trim((string) $value));
 
-    if ($token === '' || !in_array($token, ['admin', 'system', 'customer'], true)) {
+    if ($token === '' || !in_array($token, ['admin', 'staff', 'system', 'customer'], true)) {
         return '';
     }
 
@@ -323,7 +371,7 @@ function normalize_customer_order_delivery_status_token($value, $leg)
 
 function normalize_customer_order_delivery_actor($value)
 {
-    return normalize_customer_order_method($value, ['admin', 'customer', 'system']);
+    return normalize_customer_order_method($value, ['admin', 'staff', 'customer', 'system']);
 }
 
 function normalize_customer_order_delivery_reference($value)
@@ -760,7 +808,7 @@ function normalize_customer_order_courier($value)
 
 function normalize_customer_order_canceled_by($value)
 {
-    return normalize_customer_order_method($value, ['admin', 'customer', 'system']);
+    return normalize_customer_order_method($value, ['admin', 'staff', 'customer', 'system']);
 }
 
 function normalize_customer_order_cancel_reason($value)
@@ -1028,6 +1076,44 @@ function expire_customer_orders_missing_payment_receipts($orders, &$didExpire = 
 
         $record['status'] = 'canceled';
         $record['cancel_reason'] = $cancelReason;
+        $record['canceled_by'] = 'system';
+        $normalizedRecord = normalize_customer_order_record($record);
+        $orders[$index] = $normalizedRecord;
+        $expiredOrders[] = $normalizedRecord;
+        $didExpire = true;
+    }
+
+    return $orders;
+}
+
+function expire_customer_orders_pending_by_receiving_schedule($orders, &$didExpire = false, $nowTimestamp = null, &$expiredOrders = null)
+{
+    $didExpire = false;
+
+    if (!is_array($expiredOrders)) {
+        $expiredOrders = [];
+    }
+
+    if (!is_array($orders)) {
+        return [];
+    }
+
+    $currentTimestamp = is_int($nowTimestamp) ? $nowTimestamp : time();
+
+    foreach ($orders as $index => $record) {
+        if (!is_array($record) || normalize_customer_order_status_token($record['status'] ?? '') !== 'pending') {
+            continue;
+        }
+
+        $receivingTimestamp = customer_order_receiving_timestamp($record);
+
+        if ($receivingTimestamp === null || $receivingTimestamp > $currentTimestamp) {
+            continue;
+        }
+
+        // A submitted receipt must remain visible in the existing refund queue.
+        $record['status'] = customer_order_resolve_cancellation_status_token($record);
+        $record['cancel_reason'] = 'Booking was not approved before the scheduled receiving time.';
         $record['canceled_by'] = 'system';
         $normalizedRecord = normalize_customer_order_record($record);
         $orders[$index] = $normalizedRecord;
@@ -2381,6 +2467,53 @@ function customer_order_product_label_by_key($products, $productKey)
     return trim($brand . ' ' . $name);
 }
 
+function customer_order_peak_reserved_quantity($intervals, $startTimestamp = null, $endTimestamp = null, $excludeOrderId = '')
+{
+    $events = [];
+    $excludeId = trim((string) $excludeOrderId);
+
+    foreach ((array) $intervals as $interval) {
+        if (!is_array($interval)) {
+            continue;
+        }
+
+        if ($excludeId !== '' && trim((string) ($interval['order_id'] ?? '')) === $excludeId) {
+            continue;
+        }
+
+        $start = (int) ($interval['start_ts'] ?? 0);
+        $end = (int) ($interval['end_ts'] ?? 0);
+
+        if (is_int($startTimestamp)) {
+            $start = max($start, $startTimestamp);
+        }
+
+        if (is_int($endTimestamp)) {
+            $end = min($end, $endTimestamp);
+        }
+
+        if ($end <= $start) {
+            continue;
+        }
+
+        $quantity = max(1, (int) ($interval['qty'] ?? 1));
+        $events[$start] = ($events[$start] ?? 0) + $quantity;
+        $events[$end] = ($events[$end] ?? 0) - $quantity;
+    }
+
+    ksort($events, SORT_NUMERIC);
+    $occupied = 0;
+    $peak = 0;
+
+    // Combining starts and ends at the same time preserves half-open intervals.
+    foreach ($events as $delta) {
+        $occupied += $delta;
+        $peak = max($peak, $occupied);
+    }
+
+    return $peak;
+}
+
 function customer_order_requirements_fit_schedule($requirements, $scheduleTimestamp, $intervalsByProduct, $capacityMap, $excludeOrderId = '', &$failureDetails = null, $scheduleEndTimestamp = null)
 {
     $excludeId = trim((string) $excludeOrderId);
@@ -2408,31 +2541,10 @@ function customer_order_requirements_fit_schedule($requirements, $scheduleTimest
         if (is_int($scheduleEndTimestamp) && $scheduleEndTimestamp > $scheduleTimestamp) {
             $candidateEnd = $scheduleEndTimestamp;
         }
-        $occupiedQty = 0;
         $activeIntervals = isset($intervalsByProduct[$normalizedKey]) && is_array($intervalsByProduct[$normalizedKey])
             ? $intervalsByProduct[$normalizedKey]
             : [];
-
-        foreach ($activeIntervals as $interval) {
-            if (!is_array($interval)) {
-                continue;
-            }
-
-            $intervalOrderId = trim((string) ($interval['order_id'] ?? ''));
-
-            if ($excludeId !== '' && $intervalOrderId !== '' && $intervalOrderId === $excludeId) {
-                continue;
-            }
-
-            $existingStart = (int) ($interval['start_ts'] ?? 0);
-            $existingEnd = (int) ($interval['end_ts'] ?? 0);
-
-            if ($scheduleTimestamp >= $existingEnd || $candidateEnd <= $existingStart) {
-                continue;
-            }
-
-            $occupiedQty += max(1, (int) ($interval['qty'] ?? 1));
-        }
+        $occupiedQty = customer_order_peak_reserved_quantity($activeIntervals, $scheduleTimestamp, $candidateEnd, $excludeId);
 
         if (($occupiedQty + $requiredQty) > $capacity) {
             $failureDetails = [
@@ -2916,6 +3028,11 @@ function normalize_customer_order_record($record)
 
 function load_customer_orders_repository()
 {
+    $repositoryLock = customer_orders_repository_acquire_lock();
+    if ($repositoryLock === null) {
+        throw new RuntimeException('Unable to lock the booking repository.');
+    }
+
     $path = customer_orders_repository_path();
 
     if (!is_file($path)) {
@@ -2924,14 +3041,14 @@ function load_customer_orders_repository()
 
     $raw = file_get_contents($path);
     if ($raw === false) {
-        return [];
+        throw new RuntimeException('Unable to read the booking repository.');
     }
 
     $raw = preg_replace('/^\xEF\xBB\xBF/', '', (string) $raw);
     $decoded = json_decode($raw, true);
 
     if (!is_array($decoded)) {
-        return [];
+        throw new RuntimeException('The booking repository contains invalid data.');
     }
 
     $orders = [];
@@ -2958,9 +3075,14 @@ function load_customer_orders_repository()
     $didExpireOrders = false;
     $expiredOrders = [];
     $orders = expire_customer_orders_missing_payment_receipts($orders, $didExpireOrders, null, $expiredOrders);
+    $didExpirePendingOrders = false;
+    $orders = expire_customer_orders_pending_by_receiving_schedule($orders, $didExpirePendingOrders, null, $expiredOrders);
+    $didExpireOrders = $didExpireOrders || $didExpirePendingOrders;
 
     if ($didExpireOrders) {
-        save_customer_orders_repository($orders);
+        if (!save_customer_orders_repository($orders)) {
+            throw new RuntimeException('Unable to persist expired bookings.');
+        }
 
         if (!function_exists('append_customer_order_status_notification')) {
             require_once __DIR__ . '/customer_notifications_repository.php';
@@ -2988,7 +3110,9 @@ function load_customer_orders_repository()
     $orders = advance_customer_orders_to_ongoing_by_receiving_schedule($orders, $didAdvanceOrders, null, $advancedOrders);
 
     if ($didAdvanceOrders) {
-        save_customer_orders_repository($orders);
+        if (!save_customer_orders_repository($orders)) {
+            throw new RuntimeException('Unable to persist ongoing bookings.');
+        }
 
         if (!function_exists('append_customer_order_status_notification')) {
             require_once __DIR__ . '/customer_notifications_repository.php';
@@ -3021,7 +3145,9 @@ function load_customer_orders_repository()
     );
 
     if ($didAdvanceToReturnOrders) {
-        save_customer_orders_repository($orders);
+        if (!save_customer_orders_repository($orders)) {
+            throw new RuntimeException('Unable to persist bookings due for return.');
+        }
 
         if (!function_exists('append_customer_order_status_notification')) {
             require_once __DIR__ . '/customer_notifications_repository.php';
@@ -3045,7 +3171,9 @@ function load_customer_orders_repository()
     }
 
     if ($didNormalizeOrders && !$didExpireOrders && !$didAdvanceOrders && !$didAdvanceToReturnOrders) {
-        save_customer_orders_repository($orders);
+        if (!save_customer_orders_repository($orders)) {
+            throw new RuntimeException('Unable to normalize the booking repository.');
+        }
     }
 
     $didSyncInUseState = false;
@@ -3063,7 +3191,9 @@ function load_customer_orders_repository()
     $didMutateInventoryFromSync = !empty($syncInventoryResult['didMutateInventory']);
 
     if ($didMutateOrdersFromSync) {
-        save_customer_orders_repository($orders);
+        if (!save_customer_orders_repository($orders)) {
+            throw new RuntimeException('Unable to persist booking equipment assignments.');
+        }
     } elseif ($didMutateInventoryFromSync) {
         if (!function_exists('save_equipment_inventory_repository')) {
             require_once __DIR__ . '/equipment_inventory_repository.php';
@@ -3073,7 +3203,11 @@ function load_customer_orders_repository()
             ? $syncInventoryResult['inventory']
             : [];
 
-        save_equipment_inventory_repository($inventoryPayload);
+        if (!save_equipment_inventory_repository($inventoryPayload)) {
+            // Booking records remain authoritative; the next load retries this
+            // derived in-use state without repeating a committed status change.
+            error_log('Unable to synchronize booking equipment inventory; synchronization will retry on the next booking read.');
+        }
     }
 
     customer_order_sync_notifications_to_orders($orders);
@@ -3147,6 +3281,11 @@ function customer_order_sync_notifications_to_orders($orders)
 
 function save_customer_orders_repository($orders)
 {
+    $repositoryLock = customer_orders_repository_acquire_lock();
+    if ($repositoryLock === null) {
+        return false;
+    }
+
     if (!is_array($orders)) {
         return false;
     }
@@ -3210,7 +3349,13 @@ function save_customer_orders_repository($orders)
         require_once __DIR__ . '/equipment_inventory_repository.php';
     }
 
-    return save_equipment_inventory_repository($inventoryPayload);
+    if (!save_equipment_inventory_repository($inventoryPayload)) {
+        // Orders are already committed. Reporting failure here would suppress
+        // their status notifications and could make callers retry a saved order.
+        error_log('Booking saved, but equipment inventory synchronization failed; synchronization will retry on the next booking read.');
+    }
+
+    return true;
 }
 
 function find_customer_order_record_by_id($orderId)
@@ -3474,6 +3619,12 @@ function load_customer_orders_for_customer($customerId)
 function append_customer_order_for_customer($customerId, $customerName, $customerEmail, $orderPayload, &$errorMessage = '')
 {
     $errorMessage = '';
+    $repositoryLock = customer_orders_repository_acquire_lock();
+    if ($repositoryLock === null) {
+        $errorMessage = 'Unable to reserve equipment right now. Please try again.';
+        return null;
+    }
+
     $targetCustomerId = trim((string) $customerId);
 
     if ($targetCustomerId === '') {
@@ -3613,6 +3764,11 @@ function append_customer_order_for_customer($customerId, $customerName, $custome
 
 function update_customer_order_status_by_id($orderId, $nextStatus, $cancelReason = '', $canceledBy = 'admin', $options = [])
 {
+    $repositoryLock = customer_orders_repository_acquire_lock();
+    if ($repositoryLock === null) {
+        return null;
+    }
+
     $targetOrderId = trim((string) $orderId);
 
     if ($targetOrderId === '') {
@@ -3621,7 +3777,7 @@ function update_customer_order_status_by_id($orderId, $nextStatus, $cancelReason
 
     $handoverMode = customer_order_handover_mode_from_action($nextStatus);
     if ($handoverMode !== '') {
-        return confirm_customer_order_receive_handover_by_id($targetOrderId, $handoverMode, 'admin');
+        return confirm_customer_order_receive_handover_by_id($targetOrderId, $handoverMode, $canceledBy);
     }
 
     $settings = is_array($options) ? $options : [];
@@ -3791,6 +3947,11 @@ function update_customer_order_status_by_id($orderId, $nextStatus, $cancelReason
 
 function confirm_customer_order_receive_handover_by_id($orderId, $mode, $confirmedBy = 'admin')
 {
+    $repositoryLock = customer_orders_repository_acquire_lock();
+    if ($repositoryLock === null) {
+        return null;
+    }
+
     $targetOrderId = trim((string) $orderId);
     $targetMode = normalize_customer_order_receiving_method($mode);
     $normalizedConfirmedBy = normalize_customer_order_handover_confirmed_by($confirmedBy);
@@ -4055,6 +4216,11 @@ function save_customer_order_refund_proof_from_data_url($imageDataUrl, $projectR
 
 function upload_customer_order_receipt_for_customer($customerId, $orderId, $imageDataUrl, $projectRoot)
 {
+    $repositoryLock = customer_orders_repository_acquire_lock();
+    if ($repositoryLock === null) {
+        return null;
+    }
+
     $targetCustomerId = trim((string) $customerId);
     $targetOrderId = trim((string) $orderId);
 
@@ -4109,6 +4275,11 @@ function upload_customer_order_receipt_for_customer($customerId, $orderId, $imag
 
 function upload_customer_order_delivery_receipt_for_customer($customerId, $orderId, $imageDataUrl, $projectRoot, $options = [])
 {
+    $repositoryLock = customer_orders_repository_acquire_lock();
+    if ($repositoryLock === null) {
+        return null;
+    }
+
     $targetCustomerId = trim((string) $customerId);
     $targetOrderId = trim((string) $orderId);
     $settings = is_array($options) ? $options : [];
@@ -4220,6 +4391,11 @@ function upload_customer_order_delivery_receipt_for_customer($customerId, $order
 
 function upload_customer_order_delivery_receipt_for_admin($orderId, $imageDataUrl, $projectRoot, $options = [])
 {
+    $repositoryLock = customer_orders_repository_acquire_lock();
+    if ($repositoryLock === null) {
+        return null;
+    }
+
     $targetOrderId = trim((string) $orderId);
     $settings = is_array($options) ? $options : [];
     $hasDeliveryReference = array_key_exists('delivery_reference', $settings) || array_key_exists('reference', $settings);
@@ -4324,6 +4500,11 @@ function upload_customer_order_delivery_receipt_for_admin($orderId, $imageDataUr
 
 function close_customer_order_delivery_leg_by_admin($orderId, $leg, $options = [])
 {
+    $repositoryLock = customer_orders_repository_acquire_lock();
+    if ($repositoryLock === null) {
+        return null;
+    }
+
     $targetOrderId = trim((string) $orderId);
     $targetLeg = normalize_customer_order_delivery_leg($leg);
     $settings = is_array($options) ? $options : [];
@@ -4449,6 +4630,11 @@ function close_customer_order_delivery_leg_by_admin($orderId, $leg, $options = [
 
 function cancel_pending_gcash_order_for_customer_due_to_receipt_failure($customerId, $orderId, $cancelReason = '')
 {
+    $repositoryLock = customer_orders_repository_acquire_lock();
+    if ($repositoryLock === null) {
+        return null;
+    }
+
     $targetCustomerId = trim((string) $customerId);
     $targetOrderId = trim((string) $orderId);
     $normalizedReason = normalize_customer_order_cancel_reason($cancelReason);
@@ -4524,6 +4710,11 @@ function cancel_pending_gcash_order_for_customer_due_to_receipt_failure($custome
 
 function cancel_customer_order_for_customer($customerId, $orderId, $cancelReason)
 {
+    $repositoryLock = customer_orders_repository_acquire_lock();
+    if ($repositoryLock === null) {
+        return null;
+    }
+
     $targetCustomerId = trim((string) $customerId);
     $targetOrderId = trim((string) $orderId);
     $normalizedReason = normalize_customer_order_cancel_reason($cancelReason);
