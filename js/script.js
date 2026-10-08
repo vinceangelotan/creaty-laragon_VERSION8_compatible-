@@ -239,6 +239,13 @@ document.addEventListener("DOMContentLoaded", function () {
     var productCards = document.querySelectorAll('.product-grid .product-card:not([data-admin-add-card="true"])');
     var adminAddCard = document.querySelector('[data-admin-add-card="true"]');
     var productEmpty = document.querySelector(".product-grid-empty");
+    var catalogFilterForm = document.querySelector("[data-catalog-filter-form]");
+    var catalogFilterCount = document.querySelector("[data-catalog-filter-count]");
+    var catalogResultsCount = document.querySelector("[data-catalog-results-count]");
+    var catalogViewResults = document.querySelector("[data-catalog-view-results]");
+    var catalogResetButtons = document.querySelectorAll("[data-catalog-filter-reset]");
+    var catalogPriceLimit = catalogFilterForm ? Number(catalogFilterForm.querySelector('[data-catalog-price="max"]').max) : Infinity;
+    var catalogFilters = { skills: [], categories: [], min: 0, max: catalogPriceLimit };
     var adminRemoveButtons = document.querySelectorAll("[data-admin-remove-featured]");
     var adminEditButtons = document.querySelectorAll("[data-admin-edit-featured]");
     var adminEditBackdrop = document.querySelector("[data-admin-edit-backdrop]");
@@ -6526,7 +6533,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function applyProductFilters() {
-        if (!productCards.length) {
+        if (!productCards.length && !catalogFilterForm) {
             return;
         }
 
@@ -6543,6 +6550,18 @@ document.addEventListener("DOMContentLoaded", function () {
             var brandMatches = activeFilters.brand === "all" || activeFilters.brand === cardBrand;
             var hasDateFilter = activeFilters.month !== "all" || activeFilters.day !== "all" || activeFilters.year !== "all";
             var matches = brandMatches;
+
+            if (matches && catalogFilterForm) {
+                var cardSkills = String(card.getAttribute("data-skill-levels") || "").split(/\s+/);
+                var cardCategory = String(card.getAttribute("data-category") || "");
+                var cardPrice = Number(card.getAttribute("data-price"));
+                var skillMatches = !catalogFilters.skills.length || catalogFilters.skills.some(function (skill) {
+                    return cardSkills.includes(skill);
+                });
+                var categoryMatches = !catalogFilters.categories.length || catalogFilters.categories.includes(cardCategory);
+                matches = skillMatches && categoryMatches && Number.isFinite(cardPrice)
+                    && cardPrice >= catalogFilters.min && cardPrice <= catalogFilters.max;
+            }
 
             if (matches && hasDateFilter) {
                 var selectedYear = activeFilters.year === "all" ? calendarViewYear : Number.parseInt(activeFilters.year, 10);
@@ -6571,6 +6590,90 @@ document.addEventListener("DOMContentLoaded", function () {
         if (productEmpty) {
             productEmpty.hidden = visibleCount !== 0;
         }
+
+        if (catalogFilterForm) {
+            var activeCount = catalogFilters.skills.length + catalogFilters.categories.length
+                + Number(catalogFilters.min > 0) + Number(catalogFilters.max < catalogPriceLimit);
+            Object.keys(activeFilters).forEach(function (group) {
+                activeCount += Number(activeFilters[group] !== "all");
+            });
+            catalogFilterCount.textContent = String(activeCount);
+            catalogFilterCount.hidden = activeCount === 0;
+            var catalogToggle = document.querySelector('[aria-controls="catalog-filter-panel"]');
+            catalogToggle.setAttribute("aria-label", activeCount ? "Filters, " + activeCount + " active" : "Filters");
+            catalogResultsCount.textContent = visibleCount + " of " + productCards.length + " products";
+            catalogViewResults.textContent = visibleCount ? "View " + visibleCount + (visibleCount === 1 ? " product" : " products") : "View results";
+            catalogResetButtons.forEach(function (button) {
+                if (button.classList.contains("catalog-empty-reset")) {
+                    button.hidden = visibleCount !== 0 || activeCount === 0;
+                } else {
+                    button.disabled = activeCount === 0;
+                }
+            });
+        }
+    }
+
+    function updateCatalogPrice(bound, value) {
+        var parsed = Number(value);
+        if (!Number.isFinite(parsed) || String(value).trim() === "") {
+            parsed = bound === "min" ? 0 : catalogPriceLimit;
+        }
+        catalogFilters[bound] = Math.round(Math.min(catalogPriceLimit, Math.max(0, parsed)) * 100) / 100;
+        if (catalogFilters.min > catalogFilters.max) {
+            catalogFilters[bound === "min" ? "max" : "min"] = catalogFilters[bound];
+        }
+        ["min", "max"].forEach(function (edge) {
+            catalogFilterForm.querySelector('[data-catalog-price="' + edge + '"]').value = String(catalogFilters[edge]);
+            catalogFilterForm.querySelector('[data-catalog-range="' + edge + '"]').value = String(catalogFilters[edge]);
+        });
+        applyProductFilters();
+    }
+
+    if (catalogFilterForm) {
+        catalogFilterForm.addEventListener("change", function (event) {
+            var target = event.target;
+            if (target.hasAttribute("data-catalog-price")) {
+                updateCatalogPrice(target.getAttribute("data-catalog-price"), target.value);
+                return;
+            }
+            catalogFilters.skills = Array.from(catalogFilterForm.querySelectorAll("[data-catalog-skill]:checked"), function (input) { return input.value; });
+            catalogFilters.categories = Array.from(catalogFilterForm.querySelectorAll("[data-catalog-category]:checked"), function (input) { return input.value; });
+            applyProductFilters();
+        });
+        catalogFilterForm.addEventListener("input", function (event) {
+            var target = event.target;
+            if (target.hasAttribute("data-catalog-range")) {
+                updateCatalogPrice(target.getAttribute("data-catalog-range"), target.value);
+            } else if (target.hasAttribute("data-catalog-price") && target.value !== "") {
+                var bound = target.getAttribute("data-catalog-price");
+                var value = Number(target.value);
+                if (Number.isFinite(value) && value >= 0 && value <= catalogPriceLimit
+                    && (bound === "min" ? value <= catalogFilters.max : value >= catalogFilters.min)) {
+                    catalogFilters[bound] = value;
+                    catalogFilterForm.querySelector('[data-catalog-range="' + bound + '"]').value = String(value);
+                    applyProductFilters();
+                }
+            }
+        });
+        catalogResetButtons.forEach(function (button) {
+            button.addEventListener("click", function () {
+                catalogFilterForm.reset();
+                catalogFilters = { skills: [], categories: [], min: 0, max: catalogPriceLimit };
+                Object.keys(activeFilters).forEach(function (group) {
+                    activeFilters[group] = "all";
+                    syncFilterButtons(group);
+                });
+                refreshDatePickerUI();
+                applyProductFilters();
+            });
+        });
+        catalogFilterForm.addEventListener("submit", function (event) {
+            event.preventDefault();
+            var title = document.getElementById("featured-products-title");
+            closeFilterPanels(null);
+            title.focus({ preventScroll: true });
+            title.scrollIntoView({ block: "start", behavior: "auto" });
+        });
     }
 
     function initializeAdminBusinessReportPrint() {
@@ -7639,6 +7742,9 @@ document.addEventListener("DOMContentLoaded", function () {
 
         document.addEventListener("keydown", function (event) {
             if (event.key === "Escape") {
+                if (catalogFilterForm && !catalogFilterForm.hidden && catalogFilterForm.contains(document.activeElement)) {
+                    document.querySelector('[aria-controls="catalog-filter-panel"]').focus();
+                }
                 closeFilterPanels(null);
             }
         });

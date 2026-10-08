@@ -1,0 +1,341 @@
+/* Form layout refinements retain the existing palette and field order. */
+body.login-page .login-page-shell,
+body.verify-page .login-page-shell {
+    min-height: 100svh;
+    padding: 2rem 1rem;
+}
+
+body.login-page .login-page-shell:has(.auth-switch-link) {
+    padding-top: 4.75rem;
+}
+
+body.login-page .login-card,
+body.verify-page .login-card {
+    width: min(100%, 500px);
+    min-width: 0;
+    padding: 0;
+}
+
+body.login-page .brand-wrap,
+body.verify-page .brand-wrap {
+    margin-bottom: 1.5rem;
+}
+
+body.login-page .brand-logo,
+body.verify-page .brand-logo {
+    width: min(100%, 320px);
+}
+
+body.login-page .login-title {
+    margin-bottom: 1.25rem;
+    font-size: 1.5rem;
+    line-height: 1.3;
+    letter-spacing: 0;
+}
+
+body.login-page .input-row,
+body.verify-page .input-row {
+    grid-template-columns: 48px minmax(0, 1fr) 48px;
+    min-height: 58px;
+    margin-bottom: 1rem;
+}
+
+body.login-page .input-row-plain,
+body.verify-page .input-row-plain {
+    grid-template-columns: minmax(0, 1fr);
+    padding-inline: 1rem;
+}
+
+body.login-page .input-row input,
+body.login-page .input-row select,
+body.verify-page .input-row input {
+    min-width: 0;
+    min-height: 58px;
+    font-size: 1rem;
+    letter-spacing: 0;
+}
+
+body.login-page .field-icon,
+body.login-page .toggle-visibility {
+    width: 48px;
+    min-height: 58px;
+}
+
+body.login-page .input-row:focus-within,
+body.verify-page .input-row:focus-within {
+    outline: 2px solid var(--text);
+    outline-offset: 3px;
+}
+
+body.login-page .signup-fields {
+    gap: 0.875rem;
+}
+
+body.login-page .signup-fields .input-row {
+    margin-bottom: 0;
+}
+
+body.login-page .login-options {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem 1rem;
+    margin: 0 0 1.25rem;
+}
+
+body.login-page .support-link,
+body.login-page .remember-wrap {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    line-height: 1.4;
+}
+
+body.login-page .remember-wrap input {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 16px;
+}
+
+body.login-page .login-submit,
+body.login-page .google-submit {
+    width: min(100%, 352px);
+    min-height: 54px;
+    padding: 0.75rem 1rem;
+    font-size: 1rem;
+    line-height: 1.4;
+    letter-spacing: 0;
+}
+
+body.login-page .policy-check {
+    align-items: flex-start;
+    justify-content: flex-start;
+    min-height: 44px;
+    margin: 1rem 0 1.25rem;
+    font-size: 0.92rem;
+    line-height: 1.6;
+    text-align: left;
+}
+
+body.login-page .policy-check input {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 18px;
+    margin-top: 0.2rem;
+}
+
+body.login-page .switch-auth,
+body.login-page .login-hint {
+    max-width: 100%;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+    letter-spacing: 0;
+}
+
+body.login-page .form-message,
+body.verify-page .form-message,
+body.account-settings-page .form-message {
+    width: 100%;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+
+body.verify-page .verify-card {
+    padding: 2rem;
+}
+
+body.verify-page .verify-title {
+    font-size: 1.125rem;
+    line-height: 1.5;
+    letter-spacing: 0;
+}
+
+body.verify-page .verify-copy {
+    margin: 0.75rem 0 1.5rem;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+
+body.verify-page .verify-input-row {
+    margin-bottom: 0;
+}
+
+body.verify-page .verify-actions {
+    margin-top: 1.5rem;
+}
+
+body.verify-page .verify-submit {
+    padding: 0.65rem 1rem;
+    line-height: 1.4;
+}
+
+body.account-settings-page .account-settings-card {
+    gap: 1.25rem;
+}
+
+body.account-settings-page .account-settings-head h1 {
+    font-size: 1.75rem;
+    line-height: 1.3;
+    letter-spacing: 0;
+}
+
+body.account-settings-page .account-settings-head p {
+    max-width: 65ch;
+    line-height: 1.6;
+}
+
+body.account-settings-page .profile-section-head h2 {
+    line-height: 1.4;
+    letter-spacing: 0;
+}
+
+body.account-settings-page .profile-info-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+body.account-settings-page .profile-info-item {
+    min-width: 0;
+    min-height: 76px;
+    align-content: start;
+    gap: 0.35rem;
+    padding: 0.75rem 0.85rem;
+}
+
+body.account-settings-page .profile-info-item span {
+    line-height: 1.4;
+    letter-spacing: 0;
+}
+
+body.account-settings-page .profile-info-item strong,
+body.account-settings-page .profile-address-copy {
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+
+body.account-settings-page .profile-editor-panel {
+    gap: 1rem;
+    padding: 1rem;
+}
+
+body.account-settings-page .account-settings-grid label {
+    min-width: 0;
+    gap: 0.5rem;
+}
+
+body.account-settings-page .account-settings-grid label span {
+    line-height: 1.5;
+}
+
+body.account-settings-page .account-settings-grid input,
+body.account-settings-page .account-settings-grid select {
+    width: 100%;
+    min-width: 0;
+    min-height: 46px;
+    font-size: 1rem;
+    line-height: 1.4;
+}
+
+body.account-settings-page .account-settings-actions,
+body.account-settings-page .profile-section-actions {
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+body.account-settings-page .account-settings-actions button,
+body.account-settings-page .profile-action-button {
+    min-height: 44px;
+    max-width: 100%;
+    padding: 0.65rem 1rem;
+    line-height: 1.4;
+    letter-spacing: 0;
+}
+
+body.policy-page .policy-card {
+    max-width: 760px;
+    padding: 2.5rem;
+}
+
+body.policy-page .policy-kicker {
+    letter-spacing: 0;
+}
+
+body.policy-page .policy-card h1 {
+    font-size: 2rem;
+    line-height: 1.25;
+}
+
+body.policy-page .policy-copy,
+body.policy-page .policy-section p {
+    max-width: 68ch;
+    line-height: 1.75;
+    overflow-wrap: anywhere;
+}
+
+body.policy-page .policy-section h2 {
+    line-height: 1.4;
+}
+
+body.policy-page .policy-section p {
+    margin-bottom: 0;
+}
+
+body.policy-page .policy-section + .policy-section {
+    margin-top: 1.75rem;
+}
+
+@media (max-width: 680px) {
+    body.account-settings-page .profile-info-grid,
+    body.account-settings-page .account-settings-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    body.account-settings-page .account-field-wide {
+        grid-column: span 1;
+    }
+}
+
+@media (max-width: 640px) {
+    body.login-page .login-page-shell,
+    body.verify-page .login-page-shell {
+        padding: 1.5rem 1rem;
+    }
+
+    body.login-page .login-page-shell:has(.auth-switch-link) {
+        padding-top: 5rem;
+    }
+
+    body.login-page .brand-logo,
+    body.verify-page .brand-logo {
+        width: min(100%, 280px);
+    }
+
+    body.login-page .login-submit,
+    body.login-page .google-submit {
+        width: 100%;
+    }
+
+    body.verify-page .verify-card {
+        padding: 1.5rem 1rem;
+    }
+
+    body.account-settings-page .account-settings-shell {
+        padding: 1rem 1rem 2rem;
+    }
+
+    body.account-settings-page .account-settings-card {
+        padding: 1rem;
+    }
+
+    body.account-settings-page .profile-editor-panel {
+        padding: 0.85rem;
+    }
+
+    body.policy-page .policy-shell {
+        padding: 1.5rem 1rem;
+    }
+
+    body.policy-page .policy-card {
+        padding: 1.5rem;
+    }
+}

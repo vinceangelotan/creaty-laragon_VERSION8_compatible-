@@ -1,0 +1,394 @@
+/* Layout refinements retain the existing admin palette and workflows. */
+body.admin-dashboard-page .admin-dashboard-shell .admin-dashboard-title {
+    font-size: 2rem;
+    line-height: 1.2;
+    letter-spacing: 0;
+    overflow-wrap: anywhere;
+}
+
+body.admin-dashboard-page .admin-dashboard-shell .admin-dashboard-summary {
+    margin-top: 0.65rem;
+    line-height: 1.6;
+}
+
+body.admin-dashboard-page .admin-dashboard-shell .admin-dashboard-panel-title,
+body.admin-dashboard-page .transaction-history-title {
+    font-size: 1.2rem;
+    line-height: 1.35;
+    letter-spacing: 0;
+    overflow-wrap: anywhere;
+}
+
+body.admin-dashboard-page .admin-dashboard-shell .admin-dashboard-panel-head,
+body.admin-dashboard-page .admin-dashboard-shell .admin-dashboard-priority-top,
+body.admin-dashboard-page .admin-dashboard-shell .admin-dashboard-service-top,
+body.admin-dashboard-page .admin-dashboard-shell .admin-dashboard-order-top {
+    flex-wrap: wrap;
+    gap: 0.7rem;
+}
+
+body.admin-dashboard-page .admin-dashboard-shell .admin-dashboard-panel-head > div:first-child {
+    flex: 1 1 12rem;
+}
+
+body.admin-dashboard-page .admin-dashboard-shell .admin-dashboard-panel-aside {
+    max-width: 100%;
+}
+
+body.admin-dashboard-page .admin-dashboard-shell .admin-dashboard-hero-link,
+body.admin-dashboard-page .admin-dashboard-shell .admin-dashboard-panel-link {
+    line-height: 1.35;
+    padding: 0.6rem 0.85rem;
+    border-radius: 8px;
+}
+
+body.admin-dashboard-page .admin-dashboard-shell .admin-dashboard-stat-value,
+body.admin-dashboard-page .admin-dashboard-shell .admin-dashboard-panel-highlight {
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+}
+
+body.admin-dashboard-page .admin-users-head,
+body.admin-dashboard-page .admin-users-head-left,
+body.admin-dashboard-page .admin-users-filter-wrap,
+body.admin-dashboard-page .admin-reports-head,
+body.admin-dashboard-page .admin-reports-year-filter {
+    flex-wrap: wrap;
+}
+
+body.admin-dashboard-page .admin-users-head,
+body.admin-dashboard-page .admin-reports-head {
+    margin-bottom: 1rem;
+}
+
+body.admin-dashboard-page .admin-users-filter,
+body.admin-dashboard-page .admin-users-add-button,
+body.admin-dashboard-page .admin-reports-year-filter select,
+body.admin-dashboard-page .admin-reports-year-filter button {
+    min-height: 40px;
+    max-width: 100%;
+    border-radius: 8px;
+    letter-spacing: 0;
+}
+
+body.admin-dashboard-page .admin-users-table-wrap,
+body.admin-dashboard-page .admin-reports-table-wrap,
+body.admin-dashboard-page .admin-bookings-table-wrap {
+    min-width: 0;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.28) transparent;
+}
+
+body.admin-dashboard-page .admin-users-table,
+body.admin-dashboard-page .admin-reports-table {
+    min-width: 640px;
+    font-variant-numeric: tabular-nums;
+}
+
+body.admin-dashboard-page .admin-bookings-table {
+    min-width: 780px;
+    font-variant-numeric: tabular-nums;
+}
+
+body.admin-dashboard-page .admin-users-table th,
+body.admin-dashboard-page .admin-users-table td,
+body.admin-dashboard-page .admin-reports-table th,
+body.admin-dashboard-page .admin-reports-table td,
+body.admin-dashboard-page .admin-bookings-table th,
+body.admin-dashboard-page .admin-bookings-table td {
+    line-height: 1.45;
+    letter-spacing: 0;
+    vertical-align: middle;
+}
+
+body.admin-dashboard-page .admin-users-create-modal,
+body.admin-dashboard-page .admin-dashboard-settings-modal {
+    max-height: calc(100dvh - 2rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+body:has(.admin-edit-modal) .admin-edit-modal-head h2,
+body.admin-dashboard-page .admin-users-create-head h2,
+body.admin-dashboard-page .admin-dashboard-settings-head h2 {
+    font-size: 1.2rem;
+    line-height: 1.35;
+    letter-spacing: 0;
+}
+
+body:has(.admin-edit-modal) .admin-edit-modal-head {
+    align-items: flex-start;
+    gap: 0.75rem;
+}
+
+body:has(.admin-edit-modal) .admin-edit-close,
+body.admin-dashboard-page .admin-users-create-close,
+body.admin-dashboard-page .admin-dashboard-settings-close {
+    flex-shrink: 0;
+}
+
+body.admin-notifications-page .admin-notifications-head h1 {
+    font-size: 1.4rem;
+    line-height: 1.3;
+    letter-spacing: 0;
+}
+
+body.admin-notifications-page .admin-notifications-head p {
+    max-width: 70ch;
+    line-height: 1.55;
+}
+
+body.admin-notifications-page .admin-notification-item {
+    border-radius: 8px;
+    gap: 0.65rem 1rem;
+    padding: 0.9rem 1rem;
+}
+
+body.admin-notifications-page .admin-notification-item-main {
+    flex: 1 1 auto;
+}
+
+body.admin-notifications-page .admin-notification-title {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.5;
+    letter-spacing: 0;
+}
+
+body.admin-notifications-page .admin-notification-time {
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+}
+
+body.admin-notifications-page .admin-notification-sender,
+body.admin-notifications-page .admin-notification-modal-meta {
+    overflow-wrap: anywhere;
+}
+
+/* These management pages do not load the shared box-sizing reset. */
+body:has(> .brands-shell) *,
+body:has(> .categories-shell) *,
+body:has(> .archive-shell) * {
+    box-sizing: border-box;
+}
+
+body .brands-shell,
+body .categories-shell,
+body .archive-shell {
+    padding: 1.5rem 1rem 2.5rem;
+}
+
+body .brands-top,
+body .categories-top,
+body .archive-top {
+    flex-wrap: wrap;
+    gap: 0.75rem 1.25rem;
+}
+
+body .brands-top h1,
+body .categories-top h1 {
+    font-size: 1.4rem;
+    line-height: 1.35;
+    letter-spacing: 0;
+}
+
+body .brands-note,
+body .categories-note,
+body .archive-intro {
+    max-width: 75ch;
+    line-height: 1.6;
+}
+
+body .brands-grid,
+body .categories-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+    gap: 1rem;
+}
+
+body .brand-card,
+body .category-card {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 1rem;
+    gap: 0.65rem;
+    border-radius: 8px;
+}
+
+body .brand-card h2,
+body .category-card h2,
+body .archive-card h2,
+body .archive-link-card h2,
+body .archive-meta {
+    overflow-wrap: anywhere;
+    line-height: 1.45;
+}
+
+body .brand-inline-form,
+body .category-inline-form {
+    margin-top: auto;
+    padding-top: 0.35rem;
+}
+
+body .brands-add-form,
+body .categories-add-form {
+    padding: 1rem;
+    gap: 0.75rem;
+    border-radius: 8px;
+}
+
+body .brands-field,
+body .categories-field {
+    min-width: 0;
+}
+
+body .brands-field input,
+body .categories-field input,
+body .brand-inline-form input,
+body .category-inline-form input {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    border-radius: 8px;
+}
+
+body .brands-button,
+body .categories-button,
+body .brand-card-actions .brands-button,
+body .category-card-actions .categories-button {
+    min-height: 40px;
+    border-radius: 8px;
+    line-height: 1.35;
+}
+
+body .brands-button:disabled,
+body .categories-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
+body .brands-modal,
+body .categories-modal {
+    max-height: calc(100dvh - 2rem);
+    overflow-y: auto;
+    padding: 1.1rem;
+    border-radius: 8px;
+}
+
+body .brands-modal-close,
+body .categories-modal-close {
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+}
+
+body .archive-grid,
+body .archive-links {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+    gap: 1rem;
+}
+
+body .archive-card,
+body .archive-link-card {
+    min-width: 0;
+    border-radius: 8px;
+    padding: 1rem;
+    align-content: start;
+}
+
+body .archive-actions {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding-top: 0.35rem;
+}
+
+body .archive-restore-button {
+    min-height: 40px;
+}
+
+body .gcash-shell .gcash-head h1,
+body .toc-shell .toc-head h1 {
+    font-size: 1.3rem;
+    line-height: 1.35;
+    letter-spacing: 0;
+}
+
+body .gcash-shell .gcash-head p,
+body .toc-shell .toc-head p {
+    max-width: 75ch;
+    line-height: 1.6;
+}
+
+body .gcash-shell .gcash-action-btn,
+body .toc-shell .toc-action-btn,
+body .toc-shell .toc-toolbar button,
+body .toc-shell .toc-toolbar select,
+body .toc-shell .toc-toolbar label {
+    min-height: 40px;
+    border-radius: 8px;
+    letter-spacing: 0;
+    line-height: 1.35;
+}
+
+body .gcash-shell .gcash-action-btn,
+body .toc-shell .toc-action-btn {
+    padding: 0.55rem 0.85rem;
+}
+
+body .gcash-shell .gcash-fields input {
+    min-width: 0;
+    width: 100%;
+    font: inherit;
+}
+
+body .toc-shell .toc-editor-panel,
+body .toc-shell .toc-preview-panel {
+    min-width: 0;
+}
+
+body .toc-shell .toc-preview-markdown {
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+    body.admin-dashboard-page .admin-dashboard-shell .admin-dashboard-title {
+        font-size: 1.6rem;
+    }
+
+    body.admin-dashboard-page .admin-users-head,
+    body.admin-dashboard-page .admin-reports-head {
+        align-items: flex-start;
+    }
+
+    body.admin-dashboard-page .admin-users-head-left {
+        flex: 1 1 100%;
+        justify-content: space-between;
+    }
+
+    body.admin-dashboard-page .admin-users-filter-wrap {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    body:has(.admin-edit-modal) .admin-edit-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    body .brands-shell,
+    body .categories-shell,
+    body .archive-shell {
+        padding-top: 1rem;
+    }
+
+    body .brands-add-form > .brands-button,
+    body .categories-add-form > .categories-button {
+        width: 100%;
+    }
+
+    body .gcash-shell .gcash-editor-grid,
+    body .toc-shell .toc-editor-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}

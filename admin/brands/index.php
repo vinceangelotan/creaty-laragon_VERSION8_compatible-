@@ -423,6 +423,7 @@ $canRemoveBrands = count($brandMap) > 1;
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../../css/admin-refinements.css?v=20261008-1">
     <style>
         body {
             margin: 0;

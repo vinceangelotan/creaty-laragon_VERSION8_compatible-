@@ -27,6 +27,7 @@ usort($archivedItems, static function ($left, $right) {
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../../css/admin-refinements.css?v=20261008-1">
     <style>
         body { background: #0c0e12; color: #f4f4f4; font-family: 'Montserrat', sans-serif; margin: 0; }
         .archive-shell { width: min(100%, 1120px); margin: 0 auto; padding: 1.25rem 1rem 2.5rem; }
