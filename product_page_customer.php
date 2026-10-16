@@ -619,7 +619,7 @@ if (!$isAdminView && $isCustomerLoggedIn) {
 
     $customerSkillLevel = normalize_product_skill_level($customerSkillLevel);
     $_SESSION['customer_skill_level'] = $customerSkillLevel;
-    $products = filter_products_by_skill_level($products, $customerSkillLevel);
+    // All cameras stay reachable; the homepage only orders them by skill level.
 }
 
 if (
@@ -1550,7 +1550,7 @@ $pageTitleLabel = $isSearchResultsLanding
 
                 <article class="product-information-card">
                     <div class="product-panel-head">
-                        <div class="product-panel-label">Informations</div>
+                        <div class="product-panel-label" style="border:0;background:none;box-shadow:none;padding-left:0;padding-right:0;cursor:default;">Sample Photos</div>
                         <?php if ($isAdminView): ?>
                             <form class="product-info-add-form" method="post" action="" enctype="multipart/form-data">
                                 <input type="hidden" name="admin_edit_scope" value="information-images-add">
@@ -1566,12 +1566,12 @@ $pageTitleLabel = $isSearchResultsLanding
 
                         <div class="detail-gallery-track">
                             <?php if (!$selectedInformationImages): ?>
-                                <div class="detail-gallery-empty">No information images yet.</div>
+                                <div class="detail-gallery-empty">No sample photos yet.</div>
                             <?php else: ?>
                                 <?php foreach ($selectedInformationImages as $index => $imagePath): ?>
                                     <div class="detail-gallery-slide<?php echo $index === 0 ? ' is-active' : ''; ?>" aria-hidden="<?php echo $index === 0 ? 'false' : 'true'; ?>">
                                         <div class="detail-photo-frame">
-                                            <img class="detail-photo-image" src="<?php echo htmlspecialchars($assetBase . (string) $imagePath, ENT_QUOTES, 'UTF-8'); ?>" alt="Information image <?php echo htmlspecialchars((string) ($index + 1), ENT_QUOTES, 'UTF-8'); ?>">
+                                            <img class="detail-photo-image" src="<?php echo htmlspecialchars($assetBase . (string) $imagePath, ENT_QUOTES, 'UTF-8'); ?>" alt="Sample photo <?php echo htmlspecialchars((string) ($index + 1), ENT_QUOTES, 'UTF-8'); ?>">
                                             <?php if ($isAdminView): ?>
                                                 <form class="detail-photo-delete-form" method="post" action="">
                                                     <input type="hidden" name="admin_edit_scope" value="information-images-delete">
@@ -1624,7 +1624,7 @@ $pageTitleLabel = $isSearchResultsLanding
                                         data-item-name="<?php echo htmlspecialchars($selectedBrand . ' ' . $selectedProductName, ENT_QUOTES, 'UTF-8'); ?>"
                                         data-item-copy="<?php echo htmlspecialchars((string) ($selectedProduct['tagline'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
                                         data-item-image="<?php echo htmlspecialchars($assetBase . (string) ($selectedProduct['cameraImage'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
-                                        data-item-price="<?php echo htmlspecialchars((string) ($selectedProduct['price'] ?? '0.00'), ENT_QUOTES, 'UTF-8'); ?>"
+                                        data-item-price="<?php echo htmlspecialchars(number_format(((float) ($selectedProduct['price'] ?? 0)) * (1 - ($selectedDiscountPercent / 100)), 2, '.', ''), ENT_QUOTES, 'UTF-8'); ?>"
                                         <?php if (!$isCustomerLoggedIn): ?>
                                             data-login-url="<?php echo htmlspecialchars($addToCartLoginUrl, ENT_QUOTES, 'UTF-8'); ?>"
                                         <?php endif; ?>

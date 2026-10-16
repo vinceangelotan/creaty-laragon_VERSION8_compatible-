@@ -20,6 +20,7 @@ if (strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
 
 require_once dirname(__DIR__, 2) . '/config/customer_orders_repository.php';
 require_once dirname(__DIR__, 2) . '/config/booking_reason_options.php';
+require_once dirname(__DIR__, 2) . '/config/handover_proofs_repository.php';
 
 function booking_action_redirect($message, $type = 'error')
 {
@@ -92,6 +93,11 @@ if (customer_order_is_terminal_status($currentStatusToken)) {
 }
 
 if ($handoverMode !== '') {
+    // Proof of handover: a photo with the customer must be uploaded first.
+    if (find_handover_proof_for_order($orderId) === null) {
+        booking_action_redirect('Upload a photo of the handover with the customer before confirming the handover.');
+    }
+
     $updatedOrder = confirm_customer_order_receive_handover_by_id($orderId, $handoverMode, $dashboardActor);
 
     if ($updatedOrder === null) {

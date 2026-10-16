@@ -276,7 +276,7 @@ $displayAddress = count($addressParts) ? implode(', ', $addressParts) : 'No addr
             </div>
         </div>
 
-        <nav class="section-nav section-nav-disabled section-nav-with-history" aria-label="Catalog filters">
+        <nav class="section-nav section-nav-disabled section-nav-with-history" aria-label="Catalog filters" hidden style="display: none;">
             <span class="section-nav-filter is-disabled" aria-disabled="true">PROFILE</span>
             <span class="section-nav-section is-disabled" aria-disabled="true">PERSONAL INFORMATION</span>
             <span class="section-nav-filter is-disabled" aria-disabled="true">ADDRESS</span>

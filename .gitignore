@@ -1,1 +1,17 @@
 /config/customer_orders.json.lock
+
+/creaty/
+
+config/mailer.php
+config/mail.php
+config/customer_orders.json
+config/customer_notifications.json
+config/message_notifications.json
+config/handover_proofs.json
+config/handover_proofs.json.lock
+assets/payment_receipts/
+assets/refund_receipts/
+assets/handover_proofs/
+desktop.ini
+
+test_mail.php

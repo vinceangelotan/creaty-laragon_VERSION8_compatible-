@@ -15,6 +15,7 @@ $customerSignupPath = $customerSignupPath ?? 'customer-signup/';
 $customerPrivacyPolicyPath = $customerPrivacyPolicyPath ?? 'customer-privacy-policy/';
 
 require_once __DIR__ . '/config/db.php';
+require_once __DIR__ . '/config/mailer.php'; // NEW: loads the email-sending function
 
 $customerAccountsTable = $customerAccountsTable ?? 'customer_accounts';
 
@@ -83,8 +84,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $insertStmt->bind_param('sssss', $firstNameValue, $lastNameValue, $emailValue, $skillLevelValue, $hashedPassword);
 
             if ($insertStmt->execute()) {
-                $_SESSION['pending_customer_verification_id'] = (int) $insertStmt->insert_id;
+                // CHANGED: send the verification code email right after the account is created
+                $newCustomerId = (int) $insertStmt->insert_id;
                 $insertStmt->close();
+
+                $_SESSION['pending_customer_verification_id'] = $newCustomerId;
+                send_customer_verification_code($conn, $customerAccountsTable, $newCustomerId, $emailValue, $firstNameValue);
+
                 header('Location: ' . $routeBase . 'customer-verify-email/');
                 exit;
             }

@@ -13,6 +13,7 @@ $assetBase = $assetBase ?? '';
 $customerLoginPath = $customerLoginPath ?? 'customer-login/';
 $customerSignupPath = $customerSignupPath ?? 'customer-signup/';
 $customerPrivacyPolicyPath = $customerPrivacyPolicyPath ?? 'customer-privacy-policy/';
+$customerForgotPasswordPath = $customerForgotPasswordPath ?? $routeBase . 'customer-forgot-password/'; // NEW
 $adminSignupPath = $adminSignupPath ?? $routeBase . 'admin/signup/';
 $staffDashboardPath = $staffDashboardPath ?? $routeBase . 'admin/dashboard/';
 
@@ -55,6 +56,8 @@ if (isset($_GET['verified']) && $_GET['verified'] === '1') {
     $successMessage = 'Account created successfully. Please verify your email address first.';
 } elseif (isset($_GET['admin_registered']) && $_GET['admin_registered'] === '1') {
     $successMessage = 'Admin account created. You can sign in now.';
+} elseif (isset($_GET['password_reset']) && $_GET['password_reset'] === '1') { // NEW
+    $successMessage = 'Your password has been reset. You can log in with your new password.';
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -215,7 +218,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
 
                 <div class="login-options">
-                    <a class="support-link" href="#">Forgot Password?</a>
+                    <!-- CHANGED: was href="#" -->
+                    <a class="support-link" href="<?php echo htmlspecialchars($customerForgotPasswordPath, ENT_QUOTES, 'UTF-8'); ?>">Forgot Password?</a>
 
                     <label class="remember-wrap" for="customer_remember">
                         <span>Remember me</span>

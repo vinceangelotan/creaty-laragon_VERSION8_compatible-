@@ -32,6 +32,7 @@ require_once __DIR__ . '/config/gcash_qr_repository.php';
 require_once __DIR__ . '/config/customer_notifications_repository.php';
 require_once __DIR__ . '/config/customer_gcash_profiles_repository.php';
 require_once __DIR__ . '/config/customer_terms_repository.php';
+require_once __DIR__ . '/config/meeting_places_repository.php';
 
 function normalize_cart_package_camera_key($value): string
 {
@@ -128,6 +129,8 @@ function build_cart_catalog_payload(array $productsRepository, array $eventPacka
             'copy' => trim((string) ($productRecord['tagline'] ?? '')),
             'image' => cart_history_asset_url($assetBase, (string) ($productRecord['cameraImage'] ?? ''), $fallbackImage),
             'price' => cart_history_discounted_price($productRecord['price'] ?? 0, $productRecord['discountPercent'] ?? 0),
+            'originalPrice' => max(0, (float) ($productRecord['price'] ?? 0)),
+            'discountPercent' => max(0, min(95, (int) ($productRecord['discountPercent'] ?? 0))),
         ];
     }
 
@@ -151,6 +154,8 @@ function build_cart_catalog_payload(array $productsRepository, array $eventPacka
             'copy' => 'Event package with curated coverage style and sample gallery references.',
             'image' => cart_history_asset_url($assetBase, $imagePath, $fallbackImage),
             'price' => cart_history_discounted_price($packageRecord['price'] ?? 0, $packageRecord['discountPercent'] ?? 0),
+            'originalPrice' => max(0, (float) ($packageRecord['price'] ?? 0)),
+            'discountPercent' => max(0, min(95, (int) ($packageRecord['discountPercent'] ?? 0))),
         ];
     }
 
@@ -175,6 +180,8 @@ function build_cart_catalog_payload(array $productsRepository, array $eventPacka
             'copy' => trim((string) ($packageRecord['description'] ?? '')),
             'image' => cart_history_asset_url($assetBase, $imagePath, $fallbackImage),
             'price' => cart_history_discounted_price($packageRecord['price'] ?? 0, $packageRecord['discountPercent'] ?? 0),
+            'originalPrice' => max(0, (float) ($packageRecord['price'] ?? 0)),
+            'discountPercent' => max(0, min(95, (int) ($packageRecord['discountPercent'] ?? 0))),
             'durationUnit' => (string) ($packageRecord['durationUnit'] ?? 'hours'),
             'durationValue' => (int) ($packageRecord['durationValue'] ?? 1),
         ];
@@ -319,7 +326,7 @@ if ($isCustomerLoggedIn) {
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
-    <link rel="stylesheet" href="<?php echo htmlspecialchars($assetBase, ENT_QUOTES, 'UTF-8'); ?>css/style.css?v=20261008-2">
+    <link rel="stylesheet" href="<?php echo htmlspecialchars($assetBase, ENT_QUOTES, 'UTF-8'); ?>css/style.css?v=20261015-4">
     <link rel="stylesheet" href="<?php echo htmlspecialchars($assetBase, ENT_QUOTES, 'UTF-8'); ?>css/transaction-history.css?v=20260923-1">
 </head>
 <body class="cart-page">
@@ -482,9 +489,11 @@ if ($isCustomerLoggedIn) {
 
                         <label class="cart-form-line" data-booking-place-row>
                             <span>Meeting Place:</span>
+                            <?php $meetingPlaceOptions = load_meeting_places_repository(); ?>
                             <select data-booking-field="place">
-                                <option value="Walter Mart Entrance, Carmona" selected>Walter Mart Entrance, Carmona</option>
-                                <option value="Cabilang Baybay (Arko), Carmona">Cabilang Baybay (Arko), Carmona</option>
+                                <?php foreach ($meetingPlaceOptions as $meetingPlaceIndex => $meetingPlaceLabel): ?>
+                                    <option value="<?php echo htmlspecialchars($meetingPlaceLabel, ENT_QUOTES, 'UTF-8'); ?>"<?php echo $meetingPlaceIndex === 0 ? ' selected' : ''; ?>><?php echo htmlspecialchars($meetingPlaceLabel, ENT_QUOTES, 'UTF-8'); ?></option>
+                                <?php endforeach; ?>
                             </select>
                             <input
                                 type="text"
@@ -681,7 +690,7 @@ if ($isCustomerLoggedIn) {
 
                 <div class="cart-gcash-upload-row">
                     <span class="cart-gcash-upload-filename" data-cart-gcash-receipt-filename>No file selected</span>
-                    <button type="button" class="profile-order-action secondary" data-cart-gcash-receipt-select>Select Receipt</button>
+                    <button type="button" class="profile-order-action secondary" data-cart-gcash-receipt-select>Add Receipt</button>
                 </div>
 
                 <button type="button" class="profile-order-action primary" data-cart-gcash-upload>
@@ -739,7 +748,7 @@ if ($isCustomerLoggedIn) {
 
             <div class="cart-gcash-upload-row">
                 <span class="cart-gcash-upload-filename" data-cart-delivery-upload-filename>No file selected</span>
-                <button type="button" class="profile-order-action secondary" data-cart-delivery-upload-select>Select Receipt</button>
+                <button type="button" class="profile-order-action secondary" data-cart-delivery-upload-select>Add Receipt</button>
             </div>
 
             <label class="cart-delivery-upload-field" for="cart-delivery-upload-reference">
@@ -820,6 +829,6 @@ if ($isCustomerLoggedIn) {
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
     <script src="<?php echo htmlspecialchars($assetBase, ENT_QUOTES, 'UTF-8'); ?>js/transaction-history.js?v=20260923-1"></script>
-    <script src="<?php echo htmlspecialchars($assetBase, ENT_QUOTES, 'UTF-8'); ?>js/script.js?v=20260923-1"></script>
+    <script src="<?php echo htmlspecialchars($assetBase, ENT_QUOTES, 'UTF-8'); ?>js/script.js?v=20261015-2"></script>
 </body>
 </html>

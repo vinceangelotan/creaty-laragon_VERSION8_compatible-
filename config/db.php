@@ -198,6 +198,26 @@ if ($employeeIndexResult && $employeeIndexResult->num_rows === 0) {
 	$conn->query("ALTER TABLE {$adminAccountsTable} ADD UNIQUE KEY employee_number_unique (employee_number)");
 }
 
+// Staff accounts: employee number (added automatically if missing).
+$staffEmployeeColumnResult = $conn->query("SHOW COLUMNS FROM {$staffAccountsTable} LIKE 'employee_number'");
+
+if ($staffEmployeeColumnResult && $staffEmployeeColumnResult->num_rows === 0) {
+	$conn->query("ALTER TABLE {$staffAccountsTable} ADD COLUMN employee_number VARCHAR(50) DEFAULT NULL AFTER email");
+}
+
+$staffEmployeeIndexResult = $conn->query("SHOW INDEX FROM {$staffAccountsTable} WHERE Key_name = 'staff_employee_number_unique'");
+
+if ($staffEmployeeIndexResult && $staffEmployeeIndexResult->num_rows === 0) {
+	$conn->query("ALTER TABLE {$staffAccountsTable} ADD UNIQUE KEY staff_employee_number_unique (employee_number)");
+}
+
+// Admin accounts: display name (added automatically if missing).
+$adminNameColumnResult = $conn->query("SHOW COLUMNS FROM {$adminAccountsTable} LIKE 'name'");
+
+if ($adminNameColumnResult && $adminNameColumnResult->num_rows === 0) {
+	$conn->query("ALTER TABLE {$adminAccountsTable} ADD COLUMN name VARCHAR(190) DEFAULT NULL AFTER employee_number");
+}
+
 $adminUsername = 'admin';
 $adminPassword = 'admin';
 
