@@ -1,7 +1,3 @@
-@import url("ui-refinements.css?v=20261008-1");
-@import url("form-refinements.css?v=20261008-1");
-@import url("admin-refinements.css?v=20261008-1");
-
 :root {
     --bg: #0c0c0e;
     --bg-soft: #111214;
@@ -19,12 +15,6 @@
 
 * {
     box-sizing: border-box;
-}
-
-/* Layout rules such as display:grid must not make closed dialogs or inactive
-   panels visible or let them intercept clicks. */
-[hidden]:not([hidden="until-found"]) {
-    display: none !important;
 }
 
 html,
@@ -4139,6 +4129,7 @@ body.admin-dashboard-page .landing-shell {
 .cart-order-status-panel .profile-order-item {
     --cart-order-status-toggle-width: 44px;
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 0;
     padding: 0;
     overflow: hidden;
@@ -4159,8 +4150,9 @@ body.admin-dashboard-page .landing-shell {
     background: transparent;
     color: inherit;
     padding: 1.05rem 1.15rem;
+    box-sizing: border-box;
     display: grid;
-    grid-template-columns: var(--order-col-items) var(--order-col-schedule) var(--order-col-status);
+    grid-template-columns: minmax(0, 1.57fr) minmax(0, 1fr) minmax(0, 1fr);
     align-items: stretch;
     gap: 1.1rem;
     text-align: left;
@@ -4316,7 +4308,7 @@ body.admin-dashboard-page .landing-shell {
 
 .cart-order-status-detail-table {
     display: grid;
-    grid-template-columns: minmax(220px, 1fr) minmax(160px, 0.8fr) minmax(320px, 1.45fr) minmax(210px, 0.95fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.9fr) minmax(0, 1.3fr);
     gap: 0.9rem 1.1rem;
     align-items: start;
 }
@@ -4438,7 +4430,8 @@ body.admin-dashboard-page .landing-shell {
 
 .cart-order-status-actions {
     display: grid;
-    gap: 0.45rem;
+    gap: 0.6rem;
+    min-width: 0;
 }
 
 .cart-order-status-actions.is-stacked {
@@ -4448,6 +4441,13 @@ body.admin-dashboard-page .landing-shell {
 .cart-order-status-actions .profile-order-action {
     width: 100%;
     min-width: 0;
+    max-width: 100%;
+    margin: 0;
+    box-sizing: border-box;
+    padding: 0.6rem 0.9rem;
+    border-radius: 12px;
+    white-space: normal;
+    line-height: 1.25;
 }
 
 .cart-order-status-empty-detail {
@@ -7781,22 +7781,30 @@ ol.cart-terms-editor-mini-list > .cart-terms-editor-mini-item::before {
     min-width: 188px;
     padding: 0 1.05rem;
     border-radius: 10px;
-    border: 1px solid rgba(217, 217, 217, 0.16);
-    background: #111214;
-    color: #f4f4f4;
+    border: 1px solid transparent;
+    background: transparent;
+    color: #111214;
     opacity: 1;
     text-decoration: none;
     letter-spacing: 0.04em;
     white-space: nowrap;
-    box-shadow: 0 0 0 1px rgba(17, 18, 20, 0.12);
+    box-shadow: none;
 }
 
-.section-nav > .section-nav-history-link:hover,
 .section-nav > .section-nav-history-link:focus-visible {
-    background: #1a1b1f;
-    color: #ffffff;
-    border-color: rgba(217, 217, 217, 0.34);
-    box-shadow: 0 0 0 2px rgba(217, 217, 217, 0.2);
+    background: transparent;
+    color: #111214;
+    outline: 2px solid #111214;
+    outline-offset: 2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .section-nav > .section-nav-history-link:hover {
+        background: #111214;
+        color: #ffffff;
+        border-color: rgba(217, 217, 217, 0.34);
+        box-shadow: 0 0 0 2px rgba(217, 217, 217, 0.2);
+    }
 }
 
 .section-nav-item {
@@ -11571,8 +11579,6 @@ ol.cart-terms-editor-mini-list > .cart-terms-editor-mini-item::before {
 }
 
 .admin-booking-cancel-modal {
-    max-height: calc(100dvh - 2rem);
-    overflow-y: auto;
     width: min(100%, 560px);
     border: 1px solid rgba(217, 217, 217, 0.28);
     background: #111214;
@@ -11613,56 +11619,6 @@ ol.cart-terms-editor-mini-list > .cart-terms-editor-mini-item::before {
     color: #d8d8db;
     font-size: 0.84rem;
     line-height: 1.45;
-}
-
-.admin-booking-reason-label {
-    display: block;
-    color: #f4f4f4;
-    font-size: 0.84rem;
-    font-weight: 600;
-}
-
-.admin-booking-reason-label span {
-    color: #bfc2c8;
-    font-weight: 400;
-}
-
-.admin-booking-reason-select {
-    width: 100%;
-    min-width: 0;
-    min-height: 44px;
-    padding: 0.6rem;
-    border: 1px solid #5e6068;
-    border-radius: 8px;
-    background: #202226;
-    color: #f4f4f4;
-    font: inherit;
-    font-size: 0.84rem;
-    color-scheme: dark;
-}
-
-.admin-booking-reason-select:focus-visible {
-    outline: 2px solid #ece3a9;
-    outline-offset: 2px;
-}
-
-.admin-booking-reason-custom .admin-booking-reason-label { margin-bottom: 0.5rem; }
-.admin-booking-reason-custom[hidden] { display: none; }
-.admin-booking-reason-select[aria-invalid="true"] { border-color: #ffbebe; }
-
-.admin-booking-flash {
-    padding: 0.85rem 1rem;
-    margin: 0 0 1rem;
-    border: 1px solid #4d8262;
-    border-radius: 8px;
-    background: #17271e;
-    color: #d4f4df;
-}
-
-.admin-booking-flash.is-error {
-    border-color: #985d5d;
-    background: #321e20;
-    color: #ffd3d3;
 }
 
 .admin-booking-cancel-textarea {
@@ -11725,8 +11681,6 @@ ol.cart-terms-editor-mini-list > .cart-terms-editor-mini-item::before {
 }
 
 .admin-booking-review-modal {
-    max-height: calc(100dvh - 2rem);
-    overflow-y: auto;
     width: min(100%, 560px);
     border: 1px solid rgba(217, 217, 217, 0.28);
     background: #111214;
@@ -11944,4 +11898,15 @@ ol.cart-terms-editor-mini-list > .cart-terms-editor-mini-item::before {
         flex-direction: column;
         align-items: stretch;
     }
+}
+
+/* Compact status pills in the admin Reservations table */
+.admin-bookings-table td .admin-bookings-status {
+    min-width: 96px;
+    min-height: 24px;
+    max-width: 150px;
+    padding: 0.2rem 0.7rem;
+    font-size: 0.7rem;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
 }

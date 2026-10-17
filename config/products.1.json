@@ -1,0 +1,266 @@
+{
+    "canon-700d": {
+        "brand": "Canon",
+        "name": "700D",
+        "skillLevel": "Beginner",
+        "category": "Photography",
+        "price": "800.00",
+        "discountPercent": 50,
+        "spec1": "18MP APS-C CMOS sensor",
+        "spec2": "1080p Full HD video recording at up to 30 fps",
+        "tagline": "18MP APS-C CMOS sensor and 1080p Full HD recording.",
+        "cameraImage": "assets/cameras/Canon%20700D.png",
+        "captureSlides": [
+            "Street portrait placeholder",
+            "Indoor sample placeholder",
+            "Outdoor detail placeholder"
+        ],
+        "specs": {
+            "Brand": [
+                "Canon"
+            ],
+            "Imaging and Performance": [
+                "Sensor: 18MP APS-C CMOS sensor",
+                "ISO: 100-12800",
+                "Continuous shooting: 5 fps",
+                "Autofocus: 9-point AF system"
+            ],
+            "Video": [
+                "Resolution: Full HD 1080p",
+                "Frame rates: 24 fps, 25 fps, 30 fps"
+            ],
+            "Physical Specifications": [
+                "Weight: 580g with battery and card",
+                "Screen: 3-inch vari-angle touchscreen"
+            ]
+        },
+        "recommendations": [
+            "nikon-d60",
+            "sony-zv-e10",
+            "fuji-x-a3"
+        ],
+        "informationImages": [
+            "assets/cameras/product_information/Canon%20700D%20Information.jpg",
+            "assets/cameras/product_information/Canon%20700D%20Information%201.jpg",
+            "assets/cameras/product_information/Canon%20700D%20Information.png",
+            "assets/cameras/product_information/Canon%20700D%20Information%201.png",
+            "assets/cameras/product_information/Canon%20700D%20Information%202.png"
+        ]
+    },
+    "canon-1200d": {
+        "brand": "Canon",
+        "name": "1200D",
+        "skillLevel": "Beginner",
+        "category": "Photography",
+        "price": "450.00",
+        "discountPercent": 20,
+        "spec1": "18-megapixel APS-C CMOS sensor",
+        "spec2": "Full HD 1080p video recording",
+        "tagline": "18-megapixel APS-C DSLR with straightforward controls.",
+        "cameraImage": "assets/cameras/Canon%201200D.png",
+        "captureSlides": [
+            "Event capture placeholder",
+            "Portrait placeholder",
+            "Backlit scene placeholder"
+        ],
+        "specs": {
+            "Brand": [
+                "Canon"
+            ],
+            "Imaging and Performance": [
+                "Sensor: 18MP APS-C CMOS sensor",
+                "ISO: 100-6400 expandable to 12800",
+                "Processor: DIGIC 4",
+                "Autofocus: 9-point AF"
+            ],
+            "Video": [
+                "Resolution: Full HD 1080p",
+                "Frame rates: 24 fps, 25 fps, 30 fps"
+            ],
+            "Physical Specifications": [
+                "Weight: 480g body only",
+                "Screen: 3-inch LCD"
+            ]
+        },
+        "recommendations": [
+            "canon-700d",
+            "canon-4000d",
+            "fuji-x-a3"
+        ],
+        "skillLevels": [
+            "Beginner"
+        ]
+    },
+    "fuji-x-a3": {
+        "brand": "Fuji",
+        "name": "X A3",
+        "skillLevel": "Beginner",
+        "category": "Photography",
+        "price": "450.00",
+        "discountPercent": 30,
+        "spec1": "APS-C mirrorless camera",
+        "spec2": "24.2MP CMOS sensor, an ISO range of 200-6400",
+        "tagline": "APS-C mirrorless camera with a clean travel-friendly body.",
+        "cameraImage": "assets/cameras/Fujifilm%20XA-3.png",
+        "captureSlides": [
+            "Captured photo placeholder 1",
+            "Captured photo placeholder 2",
+            "Captured photo placeholder 3"
+        ],
+        "specs": {
+            "Brand": [
+                "Fuji"
+            ],
+            "Imaging and Performance": [
+                "Sensor: 24.2MP APS-C CMOS sensor",
+                "ISO: 200-6400, expandable to 100-25600",
+                "Shutter speed: 30 sec to 1/32000 sec",
+                "Continuous shooting: 6 fps",
+                "Focus: 77-point contrast-detection AF system"
+            ],
+            "Video": [
+                "Resolution: Full HD 1920x1080",
+                "Frame rates: 60p, 50p, 30p, 25p, 24p"
+            ],
+            "Physical Specifications": [
+                "Dimensions: 117 x 67 x 40 mm",
+                "Weight: 339g with battery and card"
+            ]
+        },
+        "recommendations": [
+            "nikon-d60",
+            "sony-zv-e10",
+            "canon-700d"
+        ]
+    },
+    "canon-4000d": {
+        "brand": "Canon",
+        "name": "4000D",
+        "skillLevel": "Beginner",
+        "category": "Photography",
+        "price": "600.00",
+        "discountPercent": 0,
+        "spec1": "18MP APS-C CMOS sensor",
+        "spec2": "ISO range of 100-6400 (expandable to 12800)",
+        "tagline": "Starter DSLR with a simple layout for casual rentals.",
+        "cameraImage": "assets/cameras/Canon%20400D.png",
+        "captureSlides": [
+            "Lifestyle placeholder",
+            "Daylight placeholder",
+            "Landscape placeholder"
+        ],
+        "specs": {
+            "Brand": [
+                "Canon"
+            ],
+            "Imaging and Performance": [
+                "Sensor: 18MP APS-C CMOS sensor",
+                "ISO: 100-6400 expandable to 12800",
+                "Autofocus: 9-point AF",
+                "Continuous shooting: 3 fps"
+            ],
+            "Video": [
+                "Resolution: Full HD 1080p",
+                "Frame rates: 24 fps, 25 fps, 30 fps"
+            ],
+            "Physical Specifications": [
+                "Weight: 436g body only",
+                "Screen: 2.7-inch LCD"
+            ]
+        },
+        "recommendations": [
+            "canon-1200d",
+            "canon-700d",
+            "sony-zv-e10"
+        ]
+    },
+    "sony-zv-e10": {
+        "brand": "Sony",
+        "name": "ZV E10",
+        "skillLevel": "Professional",
+        "category": "Videography",
+        "price": "899.00",
+        "discountPercent": 0,
+        "spec1": "24.2MP APS-C sensor",
+        "spec2": "4K 30p video and Full HD 120p slow-motion",
+        "tagline": "Creator-focused APS-C body for hybrid photo and video shoots.",
+        "cameraImage": "assets/cameras/Sony%20ZV-E10.png",
+        "captureSlides": [
+            "Vlog frame placeholder",
+            "Product shoot placeholder",
+            "Outdoor reel placeholder"
+        ],
+        "specs": {
+            "Brand": [
+                "Sony"
+            ],
+            "Imaging and Performance": [
+                "Sensor: 24.2MP APS-C sensor",
+                "ISO: 100-32000",
+                "Autofocus: Real-time Eye AF and tracking",
+                "Continuous shooting: 11 fps"
+            ],
+            "Video": [
+                "Resolution: 4K 30p and Full HD 120p",
+                "Audio: Directional 3-capsule mic"
+            ],
+            "Physical Specifications": [
+                "Weight: 343g body only",
+                "Screen: Side-opening vari-angle touchscreen"
+            ]
+        },
+        "recommendations": [
+            "fuji-x-a3",
+            "canon-1200d",
+            "canon-700d"
+        ]
+    },
+    "nikon-d60": {
+        "brand": "Nikon",
+        "name": "D60",
+        "skillLevel": "Beginner",
+        "category": "Photography",
+        "price": "250.00",
+        "discountPercent": 0,
+        "spec1": "10.2MP CCD sensor",
+        "spec2": "ISO range of 100-1600 (expandable to 3200)",
+        "tagline": "Compact DSLR with reliable entry-level performance.",
+        "cameraImage": "assets/cameras/Nikon%20D60.png",
+        "captureSlides": [
+            "Studio placeholder",
+            "Warm daylight placeholder",
+            "Night scene placeholder"
+        ],
+        "specs": {
+            "Brand": [
+                "Nikon"
+            ],
+            "Imaging and Performance": [
+                "Sensor: 10.2MP CCD sensor",
+                "ISO: 100-1600 expandable to 3200",
+                "Autofocus: 3-point AF system",
+                "Continuous shooting: 3 fps"
+            ],
+            "Video": [
+                "Resolution: Photo-focused body, no dedicated video mode",
+                "Best use: Basic still photography rentals"
+            ],
+            "Physical Specifications": [
+                "Weight: 495g body only",
+                "Screen: 2.5-inch LCD"
+            ]
+        },
+        "recommendations": [
+            "fuji-x-a3",
+            "sony-zv-e10",
+            "canon-700d"
+        ],
+        "informationImages": [
+            "assets/cameras/product_information/Nikon%20D60%20Information.png",
+            "assets/cameras/product_information/Nikon%20D60%20Information%201.png"
+        ],
+        "skillLevels": [
+            "Beginner"
+        ]
+    }
+}

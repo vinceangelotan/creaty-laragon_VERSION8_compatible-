@@ -113,5 +113,161 @@
             "status": "available"
         },
         "productArchiveKey": "Mark III 20260403-010100"
+    },
+    {
+        "archiveKey": "CANON_NEWPRODUCTCOPY_000_20261012-073745-5542",
+        "archivedAt": "2026-10-12T07:37:45+00:00",
+        "productKey": "canon-new-product-copy",
+        "model": "CANON_NEWPRODUCTCOPY",
+        "reason": "Featured product archived from admin dashboard card",
+        "unit": {
+            "serial": 0,
+            "status": "available"
+        },
+        "productArchiveKey": "Canon New Product (Copy) 20261012-073745"
+    },
+    {
+        "archiveKey": "CANON_NEWPRODUCTCOPY_000_20261015-102311",
+        "archivedAt": "2026-10-15T10:23:11+00:00",
+        "productKey": "canon-new-product-copy",
+        "model": "CANON_NEWPRODUCTCOPY",
+        "reason": "Removed from active inventory",
+        "unit": {
+            "serial": 0,
+            "status": "available"
+        }
+    },
+    {
+        "archiveKey": "CANON_NEWPRODUCTCOPY_001_20261015-102319",
+        "archivedAt": "2026-10-15T10:23:19+00:00",
+        "productKey": "canon-new-product-copy",
+        "model": "CANON_NEWPRODUCTCOPY",
+        "reason": "Removed from active inventory",
+        "unit": {
+            "serial": 1,
+            "status": "available"
+        }
+    },
+    {
+        "archiveKey": "CANON_NEWPRODUCTCOPY_002_20261015-102323",
+        "archivedAt": "2026-10-15T10:23:23+00:00",
+        "productKey": "canon-new-product-copy",
+        "model": "CANON_NEWPRODUCTCOPY",
+        "reason": "Removed from active inventory",
+        "unit": {
+            "serial": 2,
+            "status": "available"
+        }
+    },
+    {
+        "archiveKey": "CANON_NEWPRODUCTCOPY_003_20261015-102325",
+        "archivedAt": "2026-10-15T10:23:25+00:00",
+        "productKey": "canon-new-product-copy",
+        "model": "CANON_NEWPRODUCTCOPY",
+        "reason": "Removed from active inventory",
+        "unit": {
+            "serial": 3,
+            "status": "available"
+        }
+    },
+    {
+        "archiveKey": "CANON_NEWPRODUCTCOPY_004_20261015-102329",
+        "archivedAt": "2026-10-15T10:23:29+00:00",
+        "productKey": "canon-new-product-copy",
+        "model": "CANON_NEWPRODUCTCOPY",
+        "reason": "Removed from active inventory",
+        "unit": {
+            "serial": 4,
+            "status": "available"
+        }
+    },
+    {
+        "archiveKey": "CANON_NEWPRODUCTCOPY_005_20261015-102332",
+        "archivedAt": "2026-10-15T10:23:32+00:00",
+        "productKey": "canon-new-product-copy",
+        "model": "CANON_NEWPRODUCTCOPY",
+        "reason": "Removed from active inventory",
+        "unit": {
+            "serial": 5,
+            "status": "available"
+        }
+    },
+    {
+        "archiveKey": "CANON_NEWPRODUCTCOPY_006_20261015-102334",
+        "archivedAt": "2026-10-15T10:23:34+00:00",
+        "productKey": "canon-new-product-copy",
+        "model": "CANON_NEWPRODUCTCOPY",
+        "reason": "Removed from active inventory",
+        "unit": {
+            "serial": 6,
+            "status": "available"
+        }
+    },
+    {
+        "archiveKey": "CANON_NEWPRODUCTCOPY_007_20261015-102337",
+        "archivedAt": "2026-10-15T10:23:37+00:00",
+        "productKey": "canon-new-product-copy",
+        "model": "CANON_NEWPRODUCTCOPY",
+        "reason": "Removed from active inventory",
+        "unit": {
+            "serial": 7,
+            "status": "available"
+        }
+    },
+    {
+        "archiveKey": "CANON_NEWPRODUCTCOPY_008_20261015-102339",
+        "archivedAt": "2026-10-15T10:23:39+00:00",
+        "productKey": "canon-new-product-copy",
+        "model": "CANON_NEWPRODUCTCOPY",
+        "reason": "Removed from active inventory",
+        "unit": {
+            "serial": 8,
+            "status": "available"
+        }
+    },
+    {
+        "archiveKey": "CANON_NEWPRODUCTCOPY_009_20261015-102344",
+        "archivedAt": "2026-10-15T10:23:44+00:00",
+        "productKey": "canon-new-product-copy",
+        "model": "CANON_NEWPRODUCTCOPY",
+        "reason": "Removed from active inventory",
+        "unit": {
+            "serial": 9,
+            "status": "available"
+        }
+    },
+    {
+        "archiveKey": "CANON_NEWPRODUCTCOPY_010_20261015-102348-4405",
+        "archivedAt": "2026-10-15T10:23:48+00:00",
+        "productKey": "canon-new-product-copy",
+        "model": "CANON_NEWPRODUCTCOPY",
+        "reason": "Archived because last active quantity was removed.",
+        "unit": {
+            "serial": 10,
+            "status": "available"
+        },
+        "productArchiveKey": "Canon New Product (Copy) 20261015-102348"
+    },
+    {
+        "archiveKey": "SONY_A7III_004_20261015-111036",
+        "archivedAt": "2026-10-15T11:10:36+00:00",
+        "productKey": "sony-a7-iii",
+        "model": "SONY_A7III",
+        "reason": "Removed from active inventory",
+        "unit": {
+            "serial": 4,
+            "status": "available"
+        }
+    },
+    {
+        "archiveKey": "SONY_A7III_003_20261015-111036",
+        "archivedAt": "2026-10-15T11:10:36+00:00",
+        "productKey": "sony-a7-iii",
+        "model": "SONY_A7III",
+        "reason": "Removed from active inventory",
+        "unit": {
+            "serial": 3,
+            "status": "available"
+        }
     }
 ]

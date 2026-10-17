@@ -246,6 +246,7 @@ document.addEventListener("DOMContentLoaded", function () {
     var catalogResetButtons = document.querySelectorAll("[data-catalog-filter-reset]");
     var catalogPriceLimit = catalogFilterForm ? Number(catalogFilterForm.querySelector('[data-catalog-price="max"]').max) : Infinity;
     var catalogFilters = { skills: [], categories: [], min: 0, max: catalogPriceLimit };
+    var catalogRedirectUrl = document.body ? (document.body.getAttribute("data-catalog-redirect-url") || "") : "";
     var adminRemoveButtons = document.querySelectorAll("[data-admin-remove-featured]");
     var adminEditButtons = document.querySelectorAll("[data-admin-edit-featured]");
     var adminEditBackdrop = document.querySelector("[data-admin-edit-backdrop]");
@@ -6532,7 +6533,54 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
+    function redirectToCatalog() {
+        if (!catalogRedirectUrl) {
+            return false;
+        }
+
+        var target;
+
+        try {
+            target = new URL(catalogRedirectUrl, window.location.href);
+        } catch (error) {
+            return false;
+        }
+
+        if (activeFilters.brand !== "all") {
+            target.searchParams.set("brand", activeFilters.brand);
+        }
+
+        ["month", "day", "year"].forEach(function (group) {
+            if (activeFilters[group] !== "all") {
+                target.searchParams.set(group, activeFilters[group]);
+            }
+        });
+
+        if (catalogFilters.skills.length) {
+            target.searchParams.set("skills", catalogFilters.skills.join(","));
+        }
+
+        if (catalogFilters.categories.length) {
+            target.searchParams.set("categories", catalogFilters.categories.join(","));
+        }
+
+        if (catalogFilters.min > 0) {
+            target.searchParams.set("min", String(catalogFilters.min));
+        }
+
+        if (catalogFilters.max < catalogPriceLimit) {
+            target.searchParams.set("max", String(catalogFilters.max));
+        }
+
+        window.location.assign(target.href);
+        return true;
+    }
+
     function applyProductFilters() {
+        if (catalogRedirectUrl) {
+            return;
+        }
+
         if (!productCards.length && !catalogFilterForm) {
             return;
         }
@@ -6669,6 +6717,11 @@ document.addEventListener("DOMContentLoaded", function () {
         });
         catalogFilterForm.addEventListener("submit", function (event) {
             event.preventDefault();
+
+            if (redirectToCatalog()) {
+                return;
+            }
+
             var title = document.getElementById("featured-products-title");
             closeFilterPanels(null);
             title.focus({ preventScroll: true });
@@ -6693,7 +6746,7 @@ document.addEventListener("DOMContentLoaded", function () {
             });
         }
 
-        function buildBusinessReportPdf() {
+        function renderBusinessReportPdf(logo) {
             if (!window.jspdf || !window.jspdf.jsPDF) {
                 window.alert("PDF library is unavailable right now.");
                 return;
@@ -6734,17 +6787,39 @@ document.addEventListener("DOMContentLoaded", function () {
                 y += 16;
             }
 
-            doc.setTextColor(16, 18, 20);
-            doc.setFont("helvetica", "bold");
-            doc.setFontSize(24);
-            doc.text("THE NIFTY FIFTY", pageWidth / 2, y, { align: "center" });
-            y += 20;
+            if (logo && logo.dataUrl) {
+                // Dark banner so the white logo stays visible on the white page.
+                var bannerHeight = 112;
+                var maxLogoWidth = 270;
+                var maxLogoHeight = 86;
+                var logoScale = Math.min(maxLogoWidth / logo.width, maxLogoHeight / logo.height);
+                var logoWidth = logo.width * logoScale;
+                var logoHeight = logo.height * logoScale;
 
+                doc.setFillColor(17, 18, 20);
+                doc.rect(0, 0, pageWidth, bannerHeight, "F");
+                doc.addImage(logo.dataUrl, "PNG", (pageWidth - logoWidth) / 2, (bannerHeight - logoHeight) / 2, logoWidth, logoHeight);
+                y = bannerHeight + 38;
+            } else {
+                doc.setTextColor(16, 18, 20);
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(24);
+                doc.text("THE NIFTY FIFTY", pageWidth / 2, y, { align: "center" });
+                y += 20;
+            }
+
+            doc.setFont("helvetica", logo && logo.dataUrl ? "bold" : "normal");
+            doc.setFontSize(logo && logo.dataUrl ? 16 : 11);
+            if (logo && logo.dataUrl) {
+                doc.setTextColor(16, 18, 20);
+            } else {
+                doc.setTextColor(71, 75, 84);
+            }
+            doc.text("Business Performance Report (" + String(reportYear) + ")", pageWidth / 2, y, { align: "center" });
+            y += logo && logo.dataUrl ? 20 : 16;
             doc.setFont("helvetica", "normal");
             doc.setFontSize(11);
             doc.setTextColor(71, 75, 84);
-            doc.text("Business Performance Report (" + String(reportYear) + ")", pageWidth / 2, y, { align: "center" });
-            y += 16;
             doc.text("Generated: " + (timestamp || "-"), pageWidth / 2, y, { align: "center" });
             y += 26;
 
@@ -6895,6 +6970,65 @@ document.addEventListener("DOMContentLoaded", function () {
 
             var filename = "nifty-fifty-business-report-" + String(reportYear) + ".pdf";
             doc.save(filename);
+        }
+
+        function loadBusinessReportLogo(callback) {
+            var logoUrl = String(adminBusinessReportPayload.logoUrl || "");
+            var finished = false;
+
+            function finish(result) {
+                if (finished) {
+                    return;
+                }
+
+                finished = true;
+                callback(result);
+            }
+
+            if (!logoUrl) {
+                finish(null);
+                return;
+            }
+
+            var logoImage = new Image();
+
+            logoImage.onload = function () {
+                try {
+                    var naturalWidth = logoImage.naturalWidth || 1;
+                    var naturalHeight = logoImage.naturalHeight || 1;
+                    var downscale = Math.min(1, 900 / naturalWidth);
+                    var canvas = document.createElement("canvas");
+
+                    canvas.width = Math.max(1, Math.round(naturalWidth * downscale));
+                    canvas.height = Math.max(1, Math.round(naturalHeight * downscale));
+                    canvas.getContext("2d").drawImage(logoImage, 0, 0, canvas.width, canvas.height);
+
+                    finish({
+                        dataUrl: canvas.toDataURL("image/png"),
+                        width: canvas.width,
+                        height: canvas.height
+                    });
+                } catch (error) {
+                    finish(null);
+                }
+            };
+
+            logoImage.onerror = function () {
+                finish(null);
+            };
+
+            // Never block the report if the logo is slow or missing.
+            window.setTimeout(function () {
+                finish(null);
+            }, 4000);
+
+            logoImage.src = logoUrl;
+        }
+
+        function buildBusinessReportPdf() {
+            loadBusinessReportLogo(function (logo) {
+                renderBusinessReportPdf(logo);
+            });
         }
 
         adminBusinessReportPrintButtons.forEach(function (button) {
@@ -7710,6 +7844,11 @@ document.addEventListener("DOMContentLoaded", function () {
                 setActiveFilter("month", selectedMonth, { skipApply: true });
                 setActiveFilter("year", String(calendarViewYear), { skipApply: true });
                 setActiveFilter("day", selectedDay);
+
+                if (redirectToCatalog()) {
+                    return;
+                }
+
                 refreshDatePickerUI();
                 return;
             }
@@ -7728,6 +7867,11 @@ document.addEventListener("DOMContentLoaded", function () {
             }
 
             setActiveFilter(group, value);
+
+            if (redirectToCatalog()) {
+                return;
+            }
+
             refreshDatePickerUI();
         });
 
@@ -7748,6 +7892,123 @@ document.addEventListener("DOMContentLoaded", function () {
                 closeFilterPanels(null);
             }
         });
+
+        (function applyCatalogFiltersFromUrl() {
+            if (catalogRedirectUrl || !productCards.length || !window.URLSearchParams) {
+                return;
+            }
+
+            var params = new URLSearchParams(window.location.search);
+            var hasFilter = false;
+
+            var brandParam = normalizeFilterValue(params.get("brand"));
+            var brandOptions = filterNav.querySelectorAll('.filter-option[data-filter-group="brand"]');
+            var brandExists = brandParam !== "all" && Array.prototype.some.call(brandOptions, function (option) {
+                return normalizeFilterValue(option.getAttribute("data-filter-value")) === brandParam;
+            });
+
+            if (brandExists) {
+                setActiveFilter("brand", brandParam, { skipApply: true });
+                hasFilter = true;
+            }
+
+            var monthParam = normalizeFilterValue(params.get("month"));
+            var yearNumber = Number.parseInt(params.get("year"), 10);
+            var dayNumber = Number.parseInt(params.get("day"), 10);
+            var monthIsValid = monthParam !== "all" && monthValueToIndex[monthParam] !== undefined;
+            var yearIsValid = Number.isFinite(yearNumber) && collectAvailableYearsFromCards().indexOf(yearNumber) !== -1;
+
+            if (monthIsValid) {
+                setActiveFilter("month", monthParam, { skipApply: true });
+                hasFilter = true;
+            }
+
+            if (yearIsValid) {
+                setActiveFilter("year", String(yearNumber), { skipApply: true });
+                hasFilter = true;
+            }
+
+            if (monthIsValid && yearIsValid && Number.isFinite(dayNumber) && dayNumber >= 1
+                && dayNumber <= new Date(yearNumber, monthValueToIndex[monthParam] + 1, 0).getDate()) {
+                setActiveFilter("day", String(dayNumber), { skipApply: true });
+            }
+
+            if (catalogFilterForm) {
+                var readList = function (name) {
+                    return String(params.get(name) || "").split(",").map(function (item) {
+                        return item.trim().toLowerCase();
+                    }).filter(Boolean);
+                };
+                var wantedSkills = readList("skills");
+                var wantedCategories = readList("categories");
+
+                catalogFilterForm.querySelectorAll("[data-catalog-skill]").forEach(function (input) {
+                    input.checked = wantedSkills.indexOf(String(input.value).toLowerCase()) !== -1;
+                });
+                catalogFilterForm.querySelectorAll("[data-catalog-category]").forEach(function (input) {
+                    input.checked = wantedCategories.indexOf(String(input.value).toLowerCase()) !== -1;
+                });
+
+                catalogFilters.skills = Array.from(catalogFilterForm.querySelectorAll("[data-catalog-skill]:checked"), function (input) { return input.value; });
+                catalogFilters.categories = Array.from(catalogFilterForm.querySelectorAll("[data-catalog-category]:checked"), function (input) { return input.value; });
+
+                var minRaw = String(params.get("min") || "").trim();
+                var maxRaw = String(params.get("max") || "").trim();
+                var minValue = minRaw === "" ? 0 : Number(minRaw);
+                var maxValue = maxRaw === "" ? catalogPriceLimit : Number(maxRaw);
+
+                if (!Number.isFinite(minValue)) {
+                    minValue = 0;
+                }
+
+                if (!Number.isFinite(maxValue)) {
+                    maxValue = catalogPriceLimit;
+                }
+
+                minValue = Math.round(Math.min(catalogPriceLimit, Math.max(0, minValue)) * 100) / 100;
+                maxValue = Math.round(Math.min(catalogPriceLimit, Math.max(0, maxValue)) * 100) / 100;
+
+                if (minValue > maxValue) {
+                    minValue = maxValue;
+                }
+
+                catalogFilters.min = minValue;
+                catalogFilters.max = maxValue;
+
+                ["min", "max"].forEach(function (edge) {
+                    catalogFilterForm.querySelector('[data-catalog-price="' + edge + '"]').value = String(catalogFilters[edge]);
+                    catalogFilterForm.querySelector('[data-catalog-range="' + edge + '"]').value = String(catalogFilters[edge]);
+                });
+
+                if (catalogFilters.skills.length || catalogFilters.categories.length || minValue > 0 || maxValue < catalogPriceLimit) {
+                    hasFilter = true;
+                }
+            }
+
+            if (!hasFilter) {
+                return;
+            }
+
+            refreshDatePickerUI();
+
+            if (window.history && typeof window.history.replaceState === "function") {
+                window.history.replaceState(null, "", window.location.pathname);
+            }
+
+            var resultsTitle = document.getElementById("featured-products-title");
+
+            if (resultsTitle) {
+                var scrollToResults = function () {
+                    resultsTitle.scrollIntoView({ block: "start", behavior: "auto" });
+                };
+
+                if (document.readyState === "complete") {
+                    scrollToResults();
+                } else {
+                    window.addEventListener("load", scrollToResults);
+                }
+            }
+        })();
 
         applyProductFilters();
     }
@@ -12041,6 +12302,8 @@ document.addEventListener("DOMContentLoaded", function () {
                     copy: String(source.copy || "").trim(),
                     image: resolveCartAssetUrl(String(source.image || "").trim()) || fallbackImage,
                     price: parseMoney(source.price || 0),
+                    originalPrice: parseMoney(source.originalPrice || source.price || 0),
+                    discountPercent: Math.max(0, Math.min(95, Number.parseInt(source.discountPercent || 0, 10) || 0)),
                     durationUnit: String(source.durationUnit || source.duration_unit || "").trim().toLowerCase(),
                     durationValue: Number.parseInt(source.durationValue || source.duration_value || 1, 10)
                 };
@@ -13057,7 +13320,23 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         function getActiveCartItems() {
-            return isServicesCartViewActive() ? getServicesCartItems() : getCartItems();
+            if (isServicesCartViewActive()) {
+                return getServicesCartItems();
+            }
+
+            // Always price cart items from the current catalog so discounts are applied,
+            // even for items saved in the browser with the old (original) price.
+            return getCartItems().map(function (item) {
+                var meta = cartCatalog[item.id];
+
+                if (meta && meta.type !== "service-package") {
+                    item.price = meta.price;
+                    item.originalPrice = meta.originalPrice > 0 ? meta.originalPrice : meta.price;
+                    item.discountPercent = meta.discountPercent || 0;
+                }
+
+                return item;
+            });
         }
 
         function getServiceDurationConfig(item) {
@@ -14539,7 +14818,38 @@ document.addEventListener("DOMContentLoaded", function () {
                 summaryStatusBadge.className = "profile-order-status status-" + statusClassToken;
                 summaryStatusBadge.textContent = statusText;
                 summaryStatusBadge.title = statusText;
-                summaryStatus.appendChild(summaryStatusBadge);
+                var summaryStatusRow = document.createElement("div");
+                summaryStatusRow.style.cssText = "display:flex;align-items:center;flex-wrap:wrap;gap:8px;";
+                summaryStatusRow.appendChild(summaryStatusBadge);
+
+                // Quick action beside the status: Reschedule for canceled orders, Rebook for completed ones.
+                var quickActionType = statusToken === "canceled" ? "reschedule" : (statusToken === "completed" ? "rebook" : "");
+
+                if (quickActionType !== "" && orderEntryId !== "") {
+                    var quickActionButton = document.createElement("span");
+                    quickActionButton.className = "cart-order-status-quick-action";
+                    quickActionButton.setAttribute("role", "button");
+                    quickActionButton.setAttribute("tabindex", "0");
+                    quickActionButton.setAttribute("data-cart-order-quick-action", quickActionType);
+                    quickActionButton.setAttribute("data-cart-order-id", orderEntryId);
+                    quickActionButton.setAttribute("title", quickActionType === "reschedule"
+                        ? "Put these items back in your reservation and pick a new schedule"
+                        : "Reserve these items again");
+                    quickActionButton.textContent = quickActionType === "reschedule" ? "Reschedule" : "Rebook";
+                    quickActionButton.style.cssText = "display:inline-block;padding:3px 12px;border-radius:999px;background:#dce53a;color:#111;font-size:0.7rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;white-space:nowrap;cursor:pointer;";
+                    quickActionButton.addEventListener("keydown", function (keyEvent) {
+                        if (keyEvent.key !== "Enter" && keyEvent.key !== " ") {
+                            return;
+                        }
+
+                        keyEvent.preventDefault();
+                        keyEvent.stopPropagation();
+                        handleHistoryReReserve(orderEntryId);
+                    });
+                    summaryStatusRow.appendChild(quickActionButton);
+                }
+
+                summaryStatus.appendChild(summaryStatusRow);
 
                 var summaryEnd = document.createElement("div");
                 summaryEnd.className = "cart-order-status-summary-end";
@@ -15130,6 +15440,14 @@ document.addEventListener("DOMContentLoaded", function () {
 
         if (orderStatusList) {
             orderStatusList.addEventListener("click", function (event) {
+                var quickActionTarget = event.target.closest("[data-cart-order-quick-action]");
+                if (quickActionTarget) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    handleHistoryReReserve(String(quickActionTarget.getAttribute("data-cart-order-id") || "").trim());
+                    return;
+                }
+
                 var summaryButton = event.target.closest("[data-cart-order-summary-toggle]");
                 if (summaryButton) {
                     var summaryOrderId = String(summaryButton.getAttribute("data-cart-order-id") || "").trim();
@@ -17281,7 +17599,13 @@ document.addEventListener("DOMContentLoaded", function () {
                             '<input type="number" min="1" max="' + quantityMax + '" value="' + item.qty + '" data-cart-edit="qty"' + (itemIsUnavailable ? ' disabled' : '') + '>' +
                         '</label>' +
                         '<p class="cart-item-price-label">' + (itemIsUnavailable ? 'Status:' : 'Price:') + '</p>' +
+                        (!itemIsUnavailable && item.discountPercent > 0 && item.originalPrice > item.price
+                            ? '<span style="display:block;font-size:0.8rem;opacity:0.65;text-decoration:line-through;">' + formatMoney(item.originalPrice * item.qty * item.days) + '</span>'
+                            : '') +
                         '<strong>' + (itemIsUnavailable ? 'Unavailable' : formatMoney(lineTotal)) + '</strong>' +
+                        (!itemIsUnavailable && item.discountPercent > 0 && item.originalPrice > item.price
+                            ? '<span style="display:block;font-size:0.75rem;color:#dce53a;">' + item.discountPercent + '% OFF</span>'
+                            : '') +
                     '</div>' +
                     '<button class="cart-remove-button" type="button" aria-label="Remove item" data-cart-remove>&#10005;</button>';
 
@@ -17315,24 +17639,76 @@ document.addEventListener("DOMContentLoaded", function () {
         function refreshTotals(items) {
             var servicesCartActive = isServicesCartViewActive();
             var activeItems = Array.isArray(items) ? items : getActiveCartItems();
-            var subtotal = activeItems.reduce(function (sum, item) {
+            var subtotal = 0;
+            var originalSubtotal = 0;
+            var discountPercents = {};
+
+            activeItems.forEach(function (item) {
                 if (isUnavailableCartItem(item)) {
-                    return sum;
+                    return;
                 }
 
-                if (servicesCartActive) {
-                    return sum + item.price;
-                }
+                var multiplier = servicesCartActive ? 1 : (item.qty * item.days);
+                var originalUnit = item.originalPrice > item.price ? item.originalPrice : item.price;
 
-                return sum + (item.price * item.qty * item.days);
-            }, 0);
+                subtotal += item.price * multiplier;
+                originalSubtotal += originalUnit * multiplier;
+
+                if (originalUnit > item.price && item.discountPercent > 0) {
+                    discountPercents[String(item.discountPercent)] = true;
+                }
+            });
+
+            var discountAmount = Math.max(0, originalSubtotal - subtotal);
+            var discountKeys = Object.keys(discountPercents);
 
             if (totalNode) {
                 totalNode.textContent = formatMoney(subtotal);
             }
 
             if (breakdownNode) {
-                breakdownNode.textContent = "Subtotal " + formatMoney(subtotal);
+                breakdownNode.style.whiteSpace = "pre-line";
+
+                if (discountAmount > 0.004) {
+                    breakdownNode.textContent = "Subtotal " + formatMoney(originalSubtotal) + "\n" +
+                        "Discount" + (discountKeys.length === 1 ? " (" + discountKeys[0] + "%)" : "") + " -" + formatMoney(discountAmount) + "\n" +
+                        "Total " + formatMoney(subtotal);
+                } else {
+                    breakdownNode.textContent = "Subtotal " + formatMoney(subtotal);
+                }
+            }
+        }
+
+        function showCartQtyNotice(itemId, message) {
+            var cards = panel.querySelectorAll("[data-cart-item-id]");
+
+            for (var i = 0; i < cards.length; i++) {
+                if (cards[i].getAttribute("data-cart-item-id") !== itemId) {
+                    continue;
+                }
+
+                var priceBox = cards[i].querySelector(".cart-item-pricebox");
+
+                if (!priceBox) {
+                    return;
+                }
+
+                var note = document.createElement("p");
+                note.className = "cart-item-available-stock";
+                note.setAttribute("role", "status");
+                note.style.color = "#ff9a8f";
+                note.style.fontSize = "0.8rem";
+                note.style.margin = "4px 0 0";
+                note.textContent = message;
+                priceBox.appendChild(note);
+
+                window.setTimeout(function () {
+                    if (note.parentNode) {
+                        note.parentNode.removeChild(note);
+                    }
+                }, 3500);
+
+                return;
             }
         }
 
@@ -17355,6 +17731,7 @@ document.addEventListener("DOMContentLoaded", function () {
             var itemId = card.getAttribute("data-cart-item-id");
             var nextValue = Number.parseInt(target.value, 10);
             var maxValue = Number.parseInt(target.getAttribute("max"), 10);
+            var limitMessage = "";
 
             if (!Number.isFinite(nextValue) || nextValue < 1) {
                 nextValue = 1;
@@ -17362,6 +17739,9 @@ document.addEventListener("DOMContentLoaded", function () {
 
             if (Number.isFinite(maxValue) && maxValue > 0 && nextValue > maxValue) {
                 nextValue = maxValue;
+                limitMessage = field === "qty"
+                    ? "Only " + String(maxValue) + " available."
+                    : "Maximum is " + String(maxValue) + " days.";
             }
 
             target.value = String(nextValue);
@@ -17381,6 +17761,10 @@ document.addEventListener("DOMContentLoaded", function () {
             saveBookingSnapshot();
 
             renderCartItems();
+
+            if (limitMessage !== "") {
+                showCartQtyNotice(itemId, limitMessage);
+            }
         }
 
         panel.addEventListener("click", function (event) {
@@ -17413,8 +17797,24 @@ document.addEventListener("DOMContentLoaded", function () {
             renderCartItems();
         });
 
-        panel.addEventListener("input", handleCartPanelInput);
+        // The value is applied when you finish typing (leave the box, press Enter, or use the arrows),
+        // not on every key press. This lets you type 2, 3, 4, 10 and so on without the box resetting.
         panel.addEventListener("change", handleCartPanelInput);
+
+        panel.addEventListener("keydown", function (event) {
+            if (event.key !== "Enter") {
+                return;
+            }
+
+            var target = event.target;
+
+            if (!target || typeof target.getAttribute !== "function" || !target.getAttribute("data-cart-edit")) {
+                return;
+            }
+
+            event.preventDefault();
+            target.blur();
+        });
 
         function shiftReceiveDateCalendarMonth(monthOffset) {
             if (!receiveDateCalendarGrid) {

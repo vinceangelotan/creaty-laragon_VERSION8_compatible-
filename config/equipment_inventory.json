@@ -11,14 +11,10 @@
     },
     "canon-1200d": {
         "timesUsed": 12,
-        "nextSerial": 6,
+        "nextSerial": 1,
         "units": [
             {
                 "serial": 0,
-                "status": "in-use"
-            },
-            {
-                "serial": 1,
                 "status": "available"
             }
         ]
@@ -29,11 +25,21 @@
         "units": [
             {
                 "serial": 0,
-                "status": "available"
+                "status": "in-use"
             }
         ]
     },
     "canon-4000d": {
+        "timesUsed": 12,
+        "nextSerial": 1,
+        "units": [
+            {
+                "serial": 0,
+                "status": "missing"
+            }
+        ]
+    },
+    "sony-zv-e10": {
         "timesUsed": 12,
         "nextSerial": 1,
         "units": [
@@ -53,7 +59,83 @@
             }
         ]
     },
-    "sony-zv-e10": {
+    "sony-a7-iii": {
+        "timesUsed": 12,
+        "nextSerial": 5,
+        "units": [
+            {
+                "serial": 0,
+                "status": "available"
+            },
+            {
+                "serial": 1,
+                "status": "available"
+            },
+            {
+                "serial": 2,
+                "status": "available"
+            }
+        ]
+    },
+    "canon-eos-r5-mark-ii-mk-ii": {
+        "timesUsed": 12,
+        "nextSerial": 8,
+        "units": [
+            {
+                "serial": 0,
+                "status": "in-use"
+            },
+            {
+                "serial": 1,
+                "status": "in-use"
+            },
+            {
+                "serial": 2,
+                "status": "available"
+            },
+            {
+                "serial": 3,
+                "status": "available"
+            },
+            {
+                "serial": 4,
+                "status": "available"
+            },
+            {
+                "serial": 5,
+                "status": "available"
+            },
+            {
+                "serial": 6,
+                "status": "available"
+            },
+            {
+                "serial": 7,
+                "status": "available"
+            }
+        ]
+    },
+    "canon-new-product-copy": {
+        "timesUsed": 12,
+        "nextSerial": 1,
+        "units": [
+            {
+                "serial": 0,
+                "status": "in-use"
+            }
+        ]
+    },
+    "canon-new-product-1": {
+        "timesUsed": 12,
+        "nextSerial": 1,
+        "units": [
+            {
+                "serial": 0,
+                "status": "available"
+            }
+        ]
+    },
+    "canon-new-product-2": {
         "timesUsed": 12,
         "nextSerial": 1,
         "units": [

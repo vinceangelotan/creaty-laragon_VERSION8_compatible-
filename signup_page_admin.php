@@ -15,6 +15,7 @@ $unifiedLoginPath = $unifiedLoginPath ?? $assetBase . 'customer-login/';
 require_once __DIR__ . '/config/db.php';
 
 $adminAccountsTable = $adminAccountsTable ?? 'admin_accounts';
+$authorizedEmployeesTable = $authorizedEmployeesTable ?? 'authorized_admin_employees'; // NEW
 
 if (isset($_SESSION['user_id'])) {
     header('Location: ' . $routeBase . 'dashboard/');
@@ -25,16 +26,31 @@ $errorMessage = '';
 $usernameValue = '';
 $employeeNumberValue = '';
 
+// NEW: simple lock-out after too many wrong employee numbers (stops guessing)
+$maxEmployeeAttempts = 5;
+$lockSeconds = 900; // 15 minutes
+$lockedUntil = (int) ($_SESSION['admin_signup_locked_until'] ?? 0);
+
+if ($lockedUntil > 0 && time() >= $lockedUntil) {
+    unset($_SESSION['admin_signup_locked_until'], $_SESSION['admin_signup_failed_attempts']);
+    $lockedUntil = 0;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $usernameValue = trim($_POST['username'] ?? '');
     $passwordValue = $_POST['password'] ?? '';
     $confirmPasswordValue = $_POST['confirm_password'] ?? '';
     $employeeNumberValue = trim($_POST['employee_number'] ?? '');
 
-    if ($usernameValue === '' || $passwordValue === '' || $confirmPasswordValue === '' || $employeeNumberValue === '') {
+    if ($lockedUntil > time()) {
+        $minutesLeft = (int) ceil(($lockedUntil - time()) / 60);
+        $errorMessage = 'Too many failed attempts. Please try again in ' . $minutesLeft . ' minute(s).';
+    } elseif ($usernameValue === '' || $passwordValue === '' || $confirmPasswordValue === '' || $employeeNumberValue === '') {
         $errorMessage = 'Please complete all fields.';
     } elseif ($passwordValue !== $confirmPasswordValue) {
         $errorMessage = 'Passwords do not match.';
+    } elseif (strlen($passwordValue) < 8) {
+        $errorMessage = 'Password must be at least 8 characters.';
     } else {
         $checkStmt = $conn->prepare("SELECT id FROM {$adminAccountsTable} WHERE username = ? OR employee_number = ? LIMIT 1");
         $checkStmt->bind_param('ss', $usernameValue, $employeeNumberValue);
@@ -46,18 +62,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($existingUser) {
             $errorMessage = 'Username or employee number already exists.';
         } else {
-            $hashedPassword = password_hash($passwordValue, PASSWORD_DEFAULT);
-            $insertStmt = $conn->prepare("INSERT INTO {$adminAccountsTable} (username, employee_number, password) VALUES (?, ?, ?)");
-            $insertStmt->bind_param('sss', $usernameValue, $employeeNumberValue, $hashedPassword);
+            // NEW: the employee number must be on the authorized list and not yet used
+            $authStmt = $conn->prepare("SELECT id FROM {$authorizedEmployeesTable} WHERE employee_number = ? AND claimed_at IS NULL LIMIT 1");
+            $authStmt->bind_param('s', $employeeNumberValue);
+            $authStmt->execute();
+            $authorizedRow = $authStmt->get_result()->fetch_assoc();
+            $authStmt->close();
 
-            if ($insertStmt->execute()) {
-                $insertStmt->close();
-                header('Location: ' . $unifiedLoginPath . '?admin_registered=1');
-                exit;
+            if (!$authorizedRow) {
+                $failedAttempts = (int) ($_SESSION['admin_signup_failed_attempts'] ?? 0) + 1;
+                $_SESSION['admin_signup_failed_attempts'] = $failedAttempts;
+
+                if ($failedAttempts >= $maxEmployeeAttempts) {
+                    $_SESSION['admin_signup_locked_until'] = time() + $lockSeconds;
+                }
+
+                // Same message for "not on the list" and "already used"
+                $errorMessage = 'Invalid or unavailable employee number. Contact your administrator.';
+            } else {
+                $hashedPassword = password_hash($passwordValue, PASSWORD_DEFAULT);
+
+                try {
+                    $conn->begin_transaction();
+
+                    // Claim the employee number first; only one signup can win it
+                    $claimStmt = $conn->prepare("UPDATE {$authorizedEmployeesTable} SET claimed_at = NOW() WHERE id = ? AND claimed_at IS NULL");
+                    $authorizedId = (int) $authorizedRow['id'];
+                    $claimStmt->bind_param('i', $authorizedId);
+                    $claimStmt->execute();
+                    $claimed = $claimStmt->affected_rows === 1;
+                    $claimStmt->close();
+
+                    if (!$claimed) {
+                        $conn->rollback();
+                        $errorMessage = 'Invalid or unavailable employee number. Contact your administrator.';
+                    } else {
+                        $insertStmt = $conn->prepare("INSERT INTO {$adminAccountsTable} (username, employee_number, password) VALUES (?, ?, ?)");
+                        $insertStmt->bind_param('sss', $usernameValue, $employeeNumberValue, $hashedPassword);
+                        $inserted = $insertStmt->execute();
+                        $insertStmt->close();
+
+                        if ($inserted) {
+                            $conn->commit();
+                            unset($_SESSION['admin_signup_failed_attempts'], $_SESSION['admin_signup_locked_until']);
+
+                            header('Location: ' . $unifiedLoginPath . '?admin_registered=1');
+                            exit;
+                        }
+
+                        $conn->rollback();
+                        $errorMessage = 'Unable to create the account right now.';
+                    }
+                } catch (Throwable $e) {
+                    $conn->rollback();
+                    error_log('Admin signup failed: ' . $e->getMessage());
+                    $errorMessage = 'Unable to create the account right now.';
+                }
             }
-
-            $errorMessage = 'Unable to create the account right now.';
-            $insertStmt->close();
         }
     }
 }

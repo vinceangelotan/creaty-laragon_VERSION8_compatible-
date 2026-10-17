@@ -18,72 +18,119 @@ function default_customer_terms_content_html()
 <hr>
 
 <h3>1. Acceptance of Terms</h3>
-<p>By creating a reservation through the CREATY system, you ("Customer") enter into a legally binding contract with <strong>Nifty Fifty Camera Rentals</strong> and agree to all terms listed below.</p>
+<p>By creating a reservation through the CREATY system, you ("Customer") enter into a legally binding agreement with <strong>Nifty Fifty Camera Rentals</strong> and agree to all terms and conditions listed below.</p>
 
 <hr>
 
 <h3>2. Definitions</h3>
 <ul>
-    <li><strong>Equipment:</strong> Camera gear listed for rental.</li>
-    <li><strong>Reservation:</strong> A booking request that becomes valid after confirmation by Nifty Fifty staff.</li>
-    <li><strong>Rental Period:</strong> 22 hours of usage time starting when equipment is received.</li>
-    <li><strong>Grace Period:</strong> A 2-hour window to initiate the return process.</li>
-    <li><strong>Late Period:</strong> Time after the Grace Period until equipment is returned.</li>
+    <li><strong>Equipment:</strong> Camera gear and related items listed for rental.</li>
+    <li><strong>Reservation:</strong> A booking request submitted through CREATY that becomes valid only after confirmation by Nifty Fifty staff.</li>
+    <li><strong>Rental Period:</strong> The 22-hour usage period starting from the time the equipment is received by the Customer.</li>
+    <li><strong>Grace Period:</strong> A 2-hour period provided for the Customer to initiate the return process after the rental period ends.</li>
+    <li><strong>Late Period:</strong> The period after the Grace Period until the equipment is successfully returned and verified.</li>
 </ul>
 
 <hr>
 
 <h3>3. Reservation and Equipment Assignment</h3>
 <ul>
-    <li>Reservations are requests until confirmed by Nifty Fifty staff via the system.</li>
-    <li><strong>Equipment assignment is automated by CREATY</strong> based on availability, event suitability, and fair usage rotation.</li>
-    <li>Cancellations must be made through official channels.</li>
+    <li>Reservations submitted through CREATY are considered requests until confirmed by Nifty Fifty staff.</li>
+    <li><strong>Equipment assignment is automatically managed by CREATY</strong> based on equipment availability, event requirements, and fair usage rotation.</li>
+    <li>Customers must provide accurate reservation details, including event information and contact details.</li>
+    <li>Reservation cancellations must be made through official communication channels.</li>
+    <li>Nifty Fifty reserves the right to modify or reject reservations due to equipment availability, inaccurate information, or policy violations.</li>
 </ul>
 
 <hr>
 
 <h3>4. Claiming Equipment</h3>
-<p>You must choose one claiming method:</p>
+<p>Customers must select one claiming method:</p>
+<p><strong>Pick-up</strong></p>
 <ul>
-    <li><strong>Pick-up:</strong> Collect at Nifty Fifty's location during business hours with a valid ID.</li>
-    <li><strong>Meet-up:</strong> Time and location require prior confirmation. Being late may forfeit the reservation.</li>
-    <li><strong>Delivery:</strong> Customer arranges delivery directly and must submit valid identity verification requirements when requested.</li>
+    <li>Customer must collect the equipment at Nifty Fifty's designated location during business hours.</li>
+    <li>Customer must present a valid identification document when claiming equipment.</li>
+    <li>Equipment condition will be checked before release.</li>
+</ul>
+<p><strong>Meet-up</strong></p>
+<ul>
+    <li>Meet-up schedule, location, and time must be confirmed by Nifty Fifty staff.</li>
+    <li>Customer must arrive on time.</li>
+    <li>Failure to appear or excessive delays may result in cancellation of the reservation.</li>
+</ul>
+<p><strong>Delivery</strong></p>
+<ul>
+    <li>Customer may request delivery of equipment through available delivery options.</li>
+    <li>Customer is responsible for arranging and coordinating the delivery service.</li>
+    <li>All delivery, courier, shipping, and transportation fees shall be fully shouldered by the Customer as an additional fee separate from the rental fee.</li>
+    <li>Delivery charges are not included in the equipment rental price unless specifically stated.</li>
+    <li>Nifty Fifty is not responsible for delays, damages, losses, or issues caused by third-party courier or delivery services.</li>
+    <li>Customer must provide valid identity verification requirements when requested before equipment release.</li>
 </ul>
 
 <hr>
 
 <h3>5. Returning Equipment, Grace Period, and Penalties</h3>
-<p>You must choose one return method:</p>
+<p>Customers must select one return method:</p>
+<p><strong>Return to Store</strong></p>
 <ul>
-    <li><strong>Return to Store:</strong> Return within the agreed return window.</li>
-    <li><strong>Meet-up Return:</strong> Time and location must be pre-arranged with staff.</li>
-    <li><strong>Delivery Return:</strong> Customer arranges courier directly. Return shipment must be initiated within the 2-hour Grace Period.</li>
+    <li>Customer must return equipment to Nifty Fifty's designated location within the agreed return schedule.</li>
+</ul>
+<p><strong>Meet-up Return</strong></p>
+<ul>
+    <li>Return schedule, location, and time must be arranged and confirmed with Nifty Fifty staff.</li>
+    <li>Customer must ensure the equipment is available for inspection upon return.</li>
+</ul>
+<p><strong>Delivery Return</strong></p>
+<ul>
+    <li>Customer may arrange a courier or delivery service to return the equipment.</li>
+    <li>All return delivery, courier, shipping, and transportation fees shall be fully shouldered by the Customer as an additional fee separate from the rental fee.</li>
+    <li>Customer is responsible for ensuring that the equipment is properly packed and safely transported.</li>
+    <li>Nifty Fifty is not responsible for delays, losses, or damages caused during third-party transportation.</li>
 </ul>
 <p><strong>Late Return Rules</strong></p>
 <ul>
-    <li>The 2-hour Grace Period is for initiating return, not extended usage.</li>
-    <li>Returns completed after the Grace Period incur <span style="color: #ffb369; font-weight: 700;">&#8369;50 per hour</span> in penalties.</li>
-    <li>Failure to return equipment within 24 hours after the Grace Period may be treated as theft or conversion, with legal action pursued.</li>
+    <li>The 2-hour Grace Period is provided only for initiating the return process and is not an extension of equipment usage.</li>
+    <li>Returns completed after the Grace Period will incur a <span style="color: #ffb369; font-weight: 700;">&#8369;50 per hour</span> late fee (or part of an hour).</li>
+    <li>Failure to return equipment within 24 hours after the Grace Period may be considered unauthorized retention, and Nifty Fifty may pursue appropriate legal action.</li>
 </ul>
 
 <hr>
 
 <h3>6. Care, Liability, and Fees</h3>
 <ul>
-    <li>You are responsible for the equipment from receipt until verified return.</li>
-    <li>You are fully liable for all damage, loss, or theft and corresponding repair or replacement costs.</li>
-    <li>All rental fees and late penalties are the Customer's responsibility.</li>
-    <li>Nifty Fifty is not liable for indirect damages (for example, missed shoots or data loss).</li>
+    <li>Customer is responsible for the equipment from the time of receipt until the equipment has been inspected and officially accepted by Nifty Fifty.</li>
+    <li>Customer shall be liable for any damage, loss, missing accessories, or theft involving rented equipment.</li>
+    <li>Repair, replacement, and recovery costs shall be charged to the responsible Customer.</li>
+    <li>All rental fees, delivery fees, late penalties, damages, and other applicable charges remain the Customer's responsibility.</li>
+    <li>Nifty Fifty is not responsible for indirect damages, including missed events, missed opportunities, lost files, or business losses.</li>
 </ul>
 
 <hr>
 
-<h3>7. General Provisions</h3>
+<h3>7. Refund Policy</h3>
 <ul>
-    <li><strong>Account Integrity:</strong> You must provide accurate information. Misuse of CREATY may result in account suspension.</li>
-    <li><strong>Privacy:</strong> ID photos are collected only for verification and handled according to our Privacy Policy.</li>
-    <li><strong>Limitation of Liability:</strong> Nifty Fifty's maximum liability is limited to the total rental or package amount paid for the reservation.</li>
-    <li><strong>Changes to Terms:</strong> We may update these Terms. Continued use of CREATY means acceptance of updated Terms.</li>
+    <li>Customers may request cancellation of a reservation through official channels.</li>
+    <li>Refund requests will be reviewed and approved based on the reservation status and applicable circumstances.</li>
+    <li>Approved cancellations made before equipment release may be eligible for a refund.</li>
+    <li>Once equipment has been claimed or the rental period has started, rental fees are generally non-refundable.</li>
+    <li>Delivery fees, courier charges, and other third-party service fees are non-refundable once processed.</li>
+    <li>Refunds will not be issued for cancellations caused by Customer negligence, failure to comply with requirements, late arrival, misuse of equipment, or violation of these Terms and Conditions.</li>
+    <li>Any outstanding charges, including late fees, damages, missing equipment costs, or other penalties, may be deducted from the refundable amount.</li>
+    <li>Approved refunds will be processed within 7&#8211;14 business days, depending on the payment provider or financial institution.</li>
+    <li>Nifty Fifty reserves the right to deny refund requests involving fraud, misuse of CREATY, false information, or violations of rental policies.</li>
+</ul>
+
+<hr>
+
+<h3>8. Account Integrity, Privacy, and General Provisions</h3>
+<ul>
+    <li>Customers must provide accurate and complete information when creating an account and making reservations.</li>
+    <li>Misuse of CREATY, including fraudulent reservations or false information, may result in account suspension or termination.</li>
+    <li>Customer identification documents are collected only for verification purposes and handled according to the Privacy Policy.</li>
+    <li>Nifty Fifty's maximum liability is limited to the total rental or package amount paid for the reservation.</li>
+    <li>Nifty Fifty reserves the right to update these Terms and Conditions at any time.</li>
+    <li>Continued use of CREATY after updates means acceptance of the revised Terms and Conditions.</li>
 </ul>
 HTML;
 }

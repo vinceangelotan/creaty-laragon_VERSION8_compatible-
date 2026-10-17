@@ -3,6 +3,9 @@
         "brand": "Canon",
         "name": "700D",
         "skillLevel": "Beginner",
+        "skillLevels": [
+            "Beginner"
+        ],
         "category": "Photography",
         "price": "800.00",
         "discountPercent": 50,
@@ -41,16 +44,16 @@
         ],
         "informationImages": [
             "assets/cameras/product_information/Canon%20700D%20Information.jpg",
-            "assets/cameras/product_information/Canon%20700D%20Information%201.jpg",
-            "assets/cameras/product_information/Canon%20700D%20Information.png",
-            "assets/cameras/product_information/Canon%20700D%20Information%201.png",
-            "assets/cameras/product_information/Canon%20700D%20Information%202.png"
+            "assets/cameras/product_information/Canon%20700D%20Information.jpg"
         ]
     },
     "canon-1200d": {
         "brand": "Canon",
         "name": "1200D",
         "skillLevel": "Beginner",
+        "skillLevels": [
+            "Beginner"
+        ],
         "category": "Photography",
         "price": "450.00",
         "discountPercent": 20,
@@ -92,6 +95,9 @@
         "brand": "Fuji",
         "name": "X A3",
         "skillLevel": "Beginner",
+        "skillLevels": [
+            "Beginner"
+        ],
         "category": "Photography",
         "price": "450.00",
         "discountPercent": 30,
@@ -133,7 +139,10 @@
     "canon-4000d": {
         "brand": "Canon",
         "name": "4000D",
-        "skillLevel": "Beginner",
+        "skillLevel": "Professional",
+        "skillLevels": [
+            "Professional"
+        ],
         "category": "Photography",
         "price": "600.00",
         "discountPercent": 0,
@@ -169,51 +178,6 @@
             "canon-1200d",
             "canon-700d",
             "sony-zv-e10"
-        ]
-    },
-    "nikon-d60": {
-        "brand": "Nikon",
-        "name": "D60",
-        "skillLevel": "Beginner",
-        "category": "Photography",
-        "price": "250.00",
-        "discountPercent": 0,
-        "spec1": "10.2MP CCD sensor",
-        "spec2": "ISO range of 100-1600 (expandable to 3200)",
-        "tagline": "Compact DSLR with reliable entry-level performance.",
-        "cameraImage": "assets/cameras/Nikon%20D60.png",
-        "captureSlides": [
-            "Studio placeholder",
-            "Warm daylight placeholder",
-            "Night scene placeholder"
-        ],
-        "specs": {
-            "Brand": [
-                "Nikon"
-            ],
-            "Imaging and Performance": [
-                "Sensor: 10.2MP CCD sensor",
-                "ISO: 100-1600 expandable to 3200",
-                "Autofocus: 3-point AF system",
-                "Continuous shooting: 3 fps"
-            ],
-            "Video": [
-                "Resolution: Photo-focused body, no dedicated video mode",
-                "Best use: Basic still photography rentals"
-            ],
-            "Physical Specifications": [
-                "Weight: 495g body only",
-                "Screen: 2.5-inch LCD"
-            ]
-        },
-        "recommendations": [
-            "fuji-x-a3",
-            "sony-zv-e10",
-            "canon-700d"
-        ],
-        "informationImages": [
-            "assets/cameras/product_information/Nikon%20D60%20Information.png",
-            "assets/cameras/product_information/Nikon%20D60%20Information%201.png"
         ]
     },
     "sony-zv-e10": {
@@ -255,6 +219,219 @@
             "fuji-x-a3",
             "canon-1200d",
             "canon-700d"
+        ],
+        "skillLevels": [
+            "Professional"
         ]
+    },
+    "nikon-d60": {
+        "brand": "Nikon",
+        "name": "D60",
+        "skillLevel": "Professional",
+        "skillLevels": [
+            "Professional"
+        ],
+        "category": "Photography",
+        "price": "250.00",
+        "discountPercent": 0,
+        "spec1": "10.2MP CCD sensor",
+        "spec2": "ISO range of 100-1600 (expandable to 3200)",
+        "tagline": "Compact DSLR with reliable entry-level performance.",
+        "cameraImage": "assets/cameras/Nikon%20D60.png",
+        "captureSlides": [
+            "Studio placeholder",
+            "Warm daylight placeholder",
+            "Night scene placeholder"
+        ],
+        "specs": {
+            "Brand": [
+                "Nikon"
+            ],
+            "Imaging and Performance": [
+                "Sensor: 10.2MP CCD sensor",
+                "ISO: 100-1600 expandable to 3200",
+                "Autofocus: 3-point AF system",
+                "Continuous shooting: 3 fps"
+            ],
+            "Video": [
+                "Resolution: Photo-focused body, no dedicated video mode",
+                "Best use: Basic still photography rentals"
+            ],
+            "Physical Specifications": [
+                "Weight: 495g body only",
+                "Screen: 2.5-inch LCD"
+            ]
+        },
+        "recommendations": [
+            "fuji-x-a3",
+            "sony-zv-e10",
+            "canon-700d"
+        ],
+        "informationImages": [
+            "assets/cameras/product_information/Nikon%20D60%20Information.png",
+            "assets/cameras/product_information/Nikon%20D60%20Information%201.png"
+        ]
+    },
+    "sony-a7-iii": {
+        "brand": "Sony",
+        "name": "A7 III",
+        "skillLevels": [
+            "Beginner"
+        ],
+        "skillLevel": "Beginner",
+        "category": "Photography",
+        "price": "450.00",
+        "discountPercent": 0,
+        "spec1": "New camera specification 1",
+        "spec2": "New camera specification 2",
+        "tagline": "Add a short product tagline.",
+        "cameraImage": "assets/cameras/Sony%20A7%20III.png",
+        "informationImages": [],
+        "captureSlides": [],
+        "specs": {
+            "Brand": [
+                "Sony"
+            ],
+            "Imaging and Performance": [
+                "Add imaging and performance details."
+            ],
+            "Video": [
+                "Add video details."
+            ],
+            "Physical Specifications": [
+                "Add physical specifications."
+            ]
+        },
+        "recommendations": []
+    },
+    "canon-eos-r5-mark-ii-mk-ii": {
+        "brand": "Canon EOS R6",
+        "name": "Mk II",
+        "skillLevels": [
+            "Professional"
+        ],
+        "skillLevel": "Professional",
+        "category": "Photography",
+        "price": "650.00",
+        "discountPercent": 0,
+        "spec1": "New camera specification 1",
+        "spec2": "New camera specification 2",
+        "tagline": "Add a short product tagline.",
+        "cameraImage": "assets/cameras/Canon%20EOS%20R5%20Mark%20II%20Mk%20II.jpeg",
+        "informationImages": [
+            "assets/cameras/product_information/Canon%20EOS%20R6%20Mk%20II%20Information.jpg"
+        ],
+        "captureSlides": [],
+        "specs": {
+            "Brand": [
+                "Canon EOS R6"
+            ],
+            "Imaging and Performance": [
+                "Add imaging and performance details."
+            ],
+            "Video": [
+                "Add video details."
+            ],
+            "Physical Specifications": [
+                "Add physical specifications."
+            ]
+        },
+        "recommendations": []
+    },
+    "canon-new-product-copy": {
+        "brand": "Canon",
+        "name": "New Product (Copy)",
+        "skillLevels": [
+            "Beginner"
+        ],
+        "skillLevel": "Beginner",
+        "category": "Photography",
+        "price": "0.00",
+        "discountPercent": 0,
+        "spec1": "New camera specification 1",
+        "spec2": "New camera specification 2",
+        "tagline": "Add a short product tagline.",
+        "cameraImage": "assets/cameras/Canon%20New%20Product%20%28Copy%29%205.png",
+        "informationImages": [],
+        "captureSlides": [],
+        "specs": {
+            "Brand": [
+                "Canon"
+            ],
+            "Imaging and Performance": [
+                "Add imaging and performance details."
+            ],
+            "Video": [
+                "Add video details."
+            ],
+            "Physical Specifications": [
+                "Add physical specifications."
+            ]
+        },
+        "recommendations": []
+    },
+    "canon-new-product-1": {
+        "brand": "Canon",
+        "name": "New Product (1)",
+        "skillLevels": [
+            "Beginner"
+        ],
+        "skillLevel": "Beginner",
+        "category": "Photography",
+        "price": "0.00",
+        "discountPercent": 0,
+        "spec1": "New camera specification 1",
+        "spec2": "New camera specification 2",
+        "tagline": "Add a short product tagline.",
+        "cameraImage": "assets/cameras/Canon%20New%20Product%20%281%29.png",
+        "informationImages": [],
+        "captureSlides": [],
+        "specs": {
+            "Brand": [
+                "Canon"
+            ],
+            "Imaging and Performance": [
+                "Add imaging and performance details."
+            ],
+            "Video": [
+                "Add video details."
+            ],
+            "Physical Specifications": [
+                "Add physical specifications."
+            ]
+        },
+        "recommendations": []
+    },
+    "canon-new-product-2": {
+        "brand": "Canon",
+        "name": "New Product (2)",
+        "skillLevels": [
+            "Beginner"
+        ],
+        "skillLevel": "Beginner",
+        "category": "Photography",
+        "price": "0.00",
+        "discountPercent": 0,
+        "spec1": "New camera specification 1",
+        "spec2": "New camera specification 2",
+        "tagline": "Add a short product tagline.",
+        "cameraImage": "assets/cameras/Canon%20New%20Product%20%282%29.png",
+        "informationImages": [],
+        "captureSlides": [],
+        "specs": {
+            "Brand": [
+                "Canon"
+            ],
+            "Imaging and Performance": [
+                "Add imaging and performance details."
+            ],
+            "Video": [
+                "Add video details."
+            ],
+            "Physical Specifications": [
+                "Add physical specifications."
+            ]
+        },
+        "recommendations": []
     }
 }

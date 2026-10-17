@@ -37,6 +37,7 @@ $uploadDeliveryReceiptEndpoint = $routeBase . 'dashboard/upload_delivery_receipt
 $closeDeliveryLegEndpoint = $routeBase . 'dashboard/close_delivery_leg.php';
 $manageBrandsPath = $routeBase . 'brands/';
 $manageCategoriesPath = $routeBase . 'categories/';
+$manageMeetingPlacesPath = $routeBase . 'meeting-places/';
 $setGcashQrPath = $routeBase . 'gcash-qr/';
 $editTocPath = $routeBase . 'toc/';
 $featuredProductsPath = $adminHomePath . '?catalog=featured#featured-products-title';
@@ -79,6 +80,8 @@ $adminNotificationCount = count_unread_message_notifications($adminNotifications
 
 require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/customer_orders_repository.php';
+require_once __DIR__ . '/config/handover_proofs_repository.php';
+$handoverProofsByOrder = load_handover_proofs_repository();
 require_once __DIR__ . '/config/booking_reason_options.php';
 if (empty($_SESSION['booking_action_token'])) {
     $_SESSION['booking_action_token'] = bin2hex(random_bytes(32));
@@ -723,14 +726,28 @@ function admin_dashboard_build_conic_gradient($segments)
     return 'conic-gradient(' . implode(', ', $parts) . ')';
 }
 
+$adminUsersFlashType = 'success';
 $adminUsersFlashMessage = (isset($_GET['created']) && (string) $_GET['created'] === '1')
     ? 'User account created successfully.'
     : '';
+
+if (isset($_SESSION['admin_users_flash']) && is_array($_SESSION['admin_users_flash'])) {
+    $adminUsersFlashMessage = trim((string) ($_SESSION['admin_users_flash']['message'] ?? ''));
+    $adminUsersFlashType = (string) ($_SESSION['admin_users_flash']['type'] ?? 'success') === 'error' ? 'error' : 'success';
+    unset($_SESSION['admin_users_flash']);
+}
+
+if (empty($_SESSION['admin_users_action_token'])) {
+    $_SESSION['admin_users_action_token'] = bin2hex(random_bytes(32));
+}
+
+$adminUsersActionToken = (string) $_SESSION['admin_users_action_token'];
 
 $adminCreateUserErrors = [];
 $adminCreateUserValues = [
     'role' => 'customer',
     'full_name' => '',
+    'employee_number' => '',
     'email' => '',
     'account_status' => 'active'
 ];
@@ -760,6 +777,7 @@ if (isset($_SESSION['admin_equipment_flash'])) {
 if (!$isStaffSession && $_SERVER['REQUEST_METHOD'] === 'POST' && (string) ($_POST['admin_action'] ?? '') === 'admin_create_user') {
     $roleValue = strtolower(trim((string) ($_POST['role'] ?? 'customer')));
     $fullNameValue = trim((string) ($_POST['full_name'] ?? ''));
+    $employeeNumberValue = trim((string) ($_POST['employee_number'] ?? ''));
     $emailValue = trim((string) ($_POST['email'] ?? ''));
     $accountStatusValue = strtolower(trim((string) ($_POST['account_status'] ?? 'active')));
     $passwordValue = (string) ($_POST['password'] ?? '');
@@ -769,6 +787,7 @@ if (!$isStaffSession && $_SERVER['REQUEST_METHOD'] === 'POST' && (string) ($_POS
     $adminCreateUserValues = [
         'role' => in_array($roleValue, $adminCreatableRoles, true) ? $roleValue : 'customer',
         'full_name' => $fullNameValue,
+        'employee_number' => $employeeNumberValue,
         'email' => $emailValue,
         'account_status' => in_array($accountStatusValue, ['active', 'inactive'], true) ? $accountStatusValue : 'active'
     ];
@@ -778,12 +797,16 @@ if (!$isStaffSession && $_SERVER['REQUEST_METHOD'] === 'POST' && (string) ($_POS
     }
 
     if ($fullNameValue === '') {
-        if ($adminCreateUserValues['role'] === 'admin') {
+        $adminCreateUserErrors[] = $adminCreateUserValues['role'] === 'customer' ? 'Full name is required.' : 'Name is required.';
+    } elseif (strlen($fullNameValue) > 190) {
+        $adminCreateUserErrors[] = 'Name is too long.';
+    }
+
+    if (in_array($adminCreateUserValues['role'], ['admin', 'staff'], true)) {
+        if ($employeeNumberValue === '') {
             $adminCreateUserErrors[] = 'Employee number is required.';
-        } elseif ($adminCreateUserValues['role'] === 'staff') {
-            $adminCreateUserErrors[] = 'Name is required.';
-        } else {
-            $adminCreateUserErrors[] = 'Full name is required.';
+        } elseif (strlen($employeeNumberValue) > 50) {
+            $adminCreateUserErrors[] = 'Employee number is too long (50 characters maximum).';
         }
     }
 
@@ -849,26 +872,32 @@ if (!$isStaffSession && $_SERVER['REQUEST_METHOD'] === 'POST' && (string) ($_POS
                 }
             }
         } elseif ($adminCreateUserValues['role'] === 'staff') {
-            $checkStaffStmt = $conn->prepare("SELECT id FROM {$staffAccountsTable} WHERE email = ? LIMIT 1");
+            $checkStaffStmt = $conn->prepare("SELECT email, employee_number FROM {$staffAccountsTable} WHERE email = ? OR employee_number = ? LIMIT 2");
             if (!$checkStaffStmt) {
-                $adminCreateUserErrors[] = 'Unable to validate staff email right now.';
+                $adminCreateUserErrors[] = 'Unable to validate staff details right now.';
             } else {
-                $checkStaffStmt->bind_param('s', $emailValue);
+                $checkStaffStmt->bind_param('ss', $emailValue, $employeeNumberValue);
                 $checkStaffStmt->execute();
                 $existingStaffResult = $checkStaffStmt->get_result();
-                $existingStaff = $existingStaffResult ? $existingStaffResult->fetch_assoc() : null;
-                $checkStaffStmt->close();
 
-                if ($existingStaff) {
-                    $adminCreateUserErrors[] = 'Staff email already exists.';
+                while ($existingStaffResult && ($existingStaff = $existingStaffResult->fetch_assoc())) {
+                    if (strcasecmp((string) ($existingStaff['email'] ?? ''), $emailValue) === 0) {
+                        $adminCreateUserErrors[] = 'Staff email already exists.';
+                    }
+
+                    if ((string) ($existingStaff['employee_number'] ?? '') === $employeeNumberValue) {
+                        $adminCreateUserErrors[] = 'Employee number already exists.';
+                    }
                 }
+
+                $checkStaffStmt->close();
             }
 
             if (!$adminCreateUserErrors) {
-                $insertStaffStmt = $conn->prepare("INSERT INTO {$staffAccountsTable} (name, email, password) VALUES (?, ?, ?)");
+                $insertStaffStmt = $conn->prepare("INSERT INTO {$staffAccountsTable} (name, email, employee_number, password) VALUES (?, ?, ?, ?)");
 
                 if ($insertStaffStmt) {
-                    $insertStaffStmt->bind_param('sss', $fullNameValue, $emailValue, $hashedPassword);
+                    $insertStaffStmt->bind_param('ssss', $fullNameValue, $emailValue, $employeeNumberValue, $hashedPassword);
 
                     if (!$insertStaffStmt->execute()) {
                         $adminCreateUserErrors[] = 'Unable to create staff account.';
@@ -880,26 +909,32 @@ if (!$isStaffSession && $_SERVER['REQUEST_METHOD'] === 'POST' && (string) ($_POS
                 }
             }
         } else {
-            $checkAdminStmt = $conn->prepare("SELECT id FROM {$adminAccountsTable} WHERE username = ? LIMIT 1");
+            $checkAdminStmt = $conn->prepare("SELECT username, employee_number FROM {$adminAccountsTable} WHERE username = ? OR employee_number = ? LIMIT 2");
             if (!$checkAdminStmt) {
-                $adminCreateUserErrors[] = 'Unable to validate admin username right now.';
+                $adminCreateUserErrors[] = 'Unable to validate admin details right now.';
             } else {
-                $checkAdminStmt->bind_param('s', $emailValue);
+                $checkAdminStmt->bind_param('ss', $emailValue, $employeeNumberValue);
                 $checkAdminStmt->execute();
                 $existingAdminResult = $checkAdminStmt->get_result();
-                $existingAdmin = $existingAdminResult ? $existingAdminResult->fetch_assoc() : null;
-                $checkAdminStmt->close();
 
-                if ($existingAdmin) {
-                    $adminCreateUserErrors[] = 'Username already exists.';
+                while ($existingAdminResult && ($existingAdmin = $existingAdminResult->fetch_assoc())) {
+                    if (strcasecmp((string) ($existingAdmin['username'] ?? ''), $emailValue) === 0) {
+                        $adminCreateUserErrors[] = 'Username already exists.';
+                    }
+
+                    if ((string) ($existingAdmin['employee_number'] ?? '') === $employeeNumberValue) {
+                        $adminCreateUserErrors[] = 'Employee number already exists.';
+                    }
                 }
+
+                $checkAdminStmt->close();
             }
 
             if (!$adminCreateUserErrors) {
-                $insertAdminStmt = $conn->prepare("INSERT INTO {$adminAccountsTable} (username, employee_number, password) VALUES (?, ?, ?)");
+                $insertAdminStmt = $conn->prepare("INSERT INTO {$adminAccountsTable} (username, employee_number, name, password) VALUES (?, ?, ?, ?)");
 
                 if ($insertAdminStmt) {
-                    $insertAdminStmt->bind_param('sss', $emailValue, $fullNameValue, $hashedPassword);
+                    $insertAdminStmt->bind_param('ssss', $emailValue, $employeeNumberValue, $fullNameValue, $hashedPassword);
 
                     if (!$insertAdminStmt->execute()) {
                         $adminCreateUserErrors[] = 'Unable to create admin account.';
@@ -920,6 +955,157 @@ if (!$isStaffSession && $_SERVER['REQUEST_METHOD'] === 'POST' && (string) ($_POS
 
     $openAdminCreateUserModal = true;
     $initialAdminPanel = 'users';
+}
+
+if (!$isStaffSession && $_SERVER['REQUEST_METHOD'] === 'POST' && in_array((string) ($_POST['admin_action'] ?? ''), ['admin_update_user', 'admin_delete_user'], true)) {
+    $userActionName = (string) ($_POST['admin_action'] ?? '');
+    $userActionTargetType = strtolower(trim((string) ($_POST['user_type'] ?? '')));
+    $userActionTargetId = (int) ($_POST['user_id'] ?? 0);
+    $userActionTables = [
+        'admin' => $adminAccountsTable,
+        'staff' => $staffAccountsTable,
+        'customer' => $customerAccountsTable,
+    ];
+    $userActionError = '';
+    $userActionSuccess = '';
+
+    if (!hash_equals((string) ($_SESSION['admin_users_action_token'] ?? ''), (string) ($_POST['user_action_token'] ?? ''))) {
+        $userActionError = 'Your session changed. Refresh the page and try again.';
+    } elseif (!isset($userActionTables[$userActionTargetType]) || $userActionTargetId < 1) {
+        $userActionError = 'That account could not be found.';
+    } else {
+        $userActionTable = $userActionTables[$userActionTargetType];
+
+        try {
+            if ($userActionName === 'admin_delete_user') {
+                if ($userActionTargetType === 'admin' && $userActionTargetId === (int) ($_SESSION['user_id'] ?? 0)) {
+                    $userActionError = 'You cannot delete the account you are logged in with.';
+                } else {
+                    if ($userActionTargetType === 'admin') {
+                        $adminCountResult = $conn->query("SELECT COUNT(*) AS total FROM {$adminAccountsTable}");
+                        $adminCountRow = $adminCountResult ? $adminCountResult->fetch_assoc() : null;
+
+                        if ((int) ($adminCountRow['total'] ?? 0) <= 1) {
+                            $userActionError = 'At least one admin account must remain.';
+                        }
+                    }
+
+                    if ($userActionError === '') {
+                        $deleteUserStmt = $conn->prepare("DELETE FROM {$userActionTable} WHERE id = ? LIMIT 1");
+
+                        if (!$deleteUserStmt) {
+                            $userActionError = 'Unable to delete this account right now.';
+                        } else {
+                            $deleteUserStmt->bind_param('i', $userActionTargetId);
+                            $deleteUserStmt->execute();
+
+                            if ($deleteUserStmt->affected_rows > 0) {
+                                $userActionSuccess = 'Account deleted successfully.';
+                            } else {
+                                $userActionError = 'That account no longer exists.';
+                            }
+
+                            $deleteUserStmt->close();
+                        }
+                    }
+                }
+            } else {
+                $editNameValue = trim((string) ($_POST['edit_name'] ?? ''));
+                $editFirstNameValue = trim((string) ($_POST['edit_first_name'] ?? ''));
+                $editLastNameValue = trim((string) ($_POST['edit_last_name'] ?? ''));
+                $editEmployeeNumberValue = trim((string) ($_POST['edit_employee_number'] ?? ''));
+                $editNewPassword = (string) ($_POST['edit_new_password'] ?? '');
+                $editConfirmPassword = (string) ($_POST['edit_confirm_password'] ?? '');
+                $editHashedPassword = '';
+
+                if ($editNewPassword !== '' || $editConfirmPassword !== '') {
+                    if ($editNewPassword !== $editConfirmPassword) {
+                        $userActionError = 'New password and confirm password do not match.';
+                    } else {
+                        $editHashedPassword = password_hash($editNewPassword, PASSWORD_DEFAULT);
+                    }
+                }
+
+                if ($userActionError === '' && $userActionTargetType === 'customer') {
+                    if ($editFirstNameValue === '' || $editLastNameValue === '') {
+                        $userActionError = 'First name and last name are required.';
+                    } elseif (strlen($editFirstNameValue) > 100 || strlen($editLastNameValue) > 100) {
+                        $userActionError = 'Names can be up to 100 characters each.';
+                    }
+                } elseif ($userActionError === '') {
+                    if ($editNameValue === '') {
+                        $userActionError = 'Name is required.';
+                    } elseif (strlen($editNameValue) > 190) {
+                        $userActionError = 'Name is too long.';
+                    } elseif ($editEmployeeNumberValue === '') {
+                        $userActionError = 'Employee number is required.';
+                    } elseif (strlen($editEmployeeNumberValue) > 50) {
+                        $userActionError = 'Employee number is too long (50 characters maximum).';
+                    } else {
+                        $employeeCheckStmt = $conn->prepare("SELECT id FROM {$userActionTable} WHERE employee_number = ? AND id <> ? LIMIT 1");
+
+                        if (!$employeeCheckStmt) {
+                            $userActionError = 'Unable to validate the employee number right now.';
+                        } else {
+                            $employeeCheckStmt->bind_param('si', $editEmployeeNumberValue, $userActionTargetId);
+                            $employeeCheckStmt->execute();
+                            $employeeCheckResult = $employeeCheckStmt->get_result();
+
+                            if ($employeeCheckResult && $employeeCheckResult->fetch_assoc()) {
+                                $userActionError = 'That employee number is already used by another account.';
+                            }
+
+                            $employeeCheckStmt->close();
+                        }
+                    }
+                }
+
+                if ($userActionError === '') {
+                    if ($userActionTargetType === 'customer') {
+                        $updateSql = "UPDATE {$userActionTable} SET first_name = ?, last_name = ?" . ($editHashedPassword !== '' ? ', password = ?' : '') . ' WHERE id = ?';
+                        $updateStmt = $conn->prepare($updateSql);
+
+                        if ($updateStmt) {
+                            if ($editHashedPassword !== '') {
+                                $updateStmt->bind_param('sssi', $editFirstNameValue, $editLastNameValue, $editHashedPassword, $userActionTargetId);
+                            } else {
+                                $updateStmt->bind_param('ssi', $editFirstNameValue, $editLastNameValue, $userActionTargetId);
+                            }
+                        }
+                    } else {
+                        $updateSql = "UPDATE {$userActionTable} SET name = ?, employee_number = ?" . ($editHashedPassword !== '' ? ', password = ?' : '') . ' WHERE id = ?';
+                        $updateStmt = $conn->prepare($updateSql);
+
+                        if ($updateStmt) {
+                            if ($editHashedPassword !== '') {
+                                $updateStmt->bind_param('sssi', $editNameValue, $editEmployeeNumberValue, $editHashedPassword, $userActionTargetId);
+                            } else {
+                                $updateStmt->bind_param('ssi', $editNameValue, $editEmployeeNumberValue, $userActionTargetId);
+                            }
+                        }
+                    }
+
+                    if (!$updateStmt) {
+                        $userActionError = 'Unable to save changes right now.';
+                    } else {
+                        $updateStmt->execute();
+                        $updateStmt->close();
+                        $userActionSuccess = 'Account updated successfully.';
+                    }
+                }
+            }
+        } catch (Throwable $userActionException) {
+            $userActionError = 'Something went wrong while saving. Please try again.';
+        }
+    }
+
+    $_SESSION['admin_users_flash'] = [
+        'type' => $userActionError !== '' ? 'error' : 'success',
+        'message' => $userActionError !== '' ? $userActionError : $userActionSuccess,
+    ];
+
+    header('Location: ' . $adminHomePath . '?admin_view=users');
+    exit;
 }
 
 require __DIR__ . '/config/products_repository.php';
@@ -960,7 +1146,17 @@ foreach ($equipmentStatuses as $equipmentStatusValue) {
 
 $dashboardUsers = [];
 
-$adminUsersResult = $conn->query("SELECT id, username, employee_number FROM {$adminAccountsTable} ORDER BY id ASC");
+$authorizedAdminTableResult = $conn->query("SHOW TABLES LIKE 'authorized_admin_employees'");
+$authorizedAdminTableExists = $authorizedAdminTableResult && $authorizedAdminTableResult->num_rows > 0;
+
+$adminUsersSql = $authorizedAdminTableExists
+    ? "SELECT a.id, a.username, a.employee_number, COALESCE(NULLIF(TRIM(a.name), ''), NULLIF(TRIM(e.employee_name), ''), '') AS display_name
+       FROM {$adminAccountsTable} a
+       LEFT JOIN authorized_admin_employees e ON e.employee_number = a.employee_number
+       ORDER BY a.id ASC"
+    : "SELECT id, username, employee_number, COALESCE(NULLIF(TRIM(name), ''), '') AS display_name FROM {$adminAccountsTable} ORDER BY id ASC";
+
+$adminUsersResult = $conn->query($adminUsersSql);
 if ($adminUsersResult instanceof mysqli_result) {
     while ($adminRow = $adminUsersResult->fetch_assoc()) {
         $idValue = (int) ($adminRow['id'] ?? 0);
@@ -969,15 +1165,18 @@ if ($adminUsersResult instanceof mysqli_result) {
         }
 
         $dashboardUsers[] = [
+            'type' => 'admin',
+            'id' => $idValue,
             'prefixedId' => 'ADMIN_' . str_pad((string) $idValue, 3, '0', STR_PAD_LEFT),
-            'name' => (string) ($adminRow['employee_number'] ?? ''),
+            'name' => (string) ($adminRow['display_name'] ?? ''),
+            'employeeNumber' => (string) ($adminRow['employee_number'] ?? ''),
             'email' => (string) ($adminRow['username'] ?? ''),
             'role' => 'ADMIN'
         ];
     }
 }
 
-$staffUsersResult = $conn->query("SELECT id, name, email FROM {$staffAccountsTable} ORDER BY id ASC");
+$staffUsersResult = $conn->query("SELECT id, name, email, employee_number FROM {$staffAccountsTable} ORDER BY id ASC");
 if ($staffUsersResult instanceof mysqli_result) {
     while ($staffRow = $staffUsersResult->fetch_assoc()) {
         $idValue = (int) ($staffRow['id'] ?? 0);
@@ -986,8 +1185,11 @@ if ($staffUsersResult instanceof mysqli_result) {
         }
 
         $dashboardUsers[] = [
+            'type' => 'staff',
+            'id' => $idValue,
             'prefixedId' => 'STAFF_' . str_pad((string) $idValue, 3, '0', STR_PAD_LEFT),
             'name' => trim((string) ($staffRow['name'] ?? '')) !== '' ? trim((string) ($staffRow['name'] ?? '')) : 'Staff',
+            'employeeNumber' => (string) ($staffRow['employee_number'] ?? ''),
             'email' => (string) ($staffRow['email'] ?? '-'),
             'role' => 'STAFF'
         ];
@@ -1005,8 +1207,13 @@ if ($customerUsersResult instanceof mysqli_result) {
         $fullName = trim((string) ($customerRow['first_name'] ?? '') . ' ' . (string) ($customerRow['last_name'] ?? ''));
 
         $dashboardUsers[] = [
+            'type' => 'customer',
+            'id' => $idValue,
             'prefixedId' => 'CUSTOMER_' . str_pad((string) $idValue, 3, '0', STR_PAD_LEFT),
             'name' => $fullName !== '' ? $fullName : 'Customer',
+            'firstName' => (string) ($customerRow['first_name'] ?? ''),
+            'lastName' => (string) ($customerRow['last_name'] ?? ''),
+            'employeeNumber' => '',
             'email' => (string) ($customerRow['email'] ?? '-'),
             'role' => 'CUSTOMER'
         ];
@@ -1217,6 +1424,26 @@ if (!in_array($reportsSortDirection, ['asc', 'desc'], true)) {
     $reportsSortDirection = $reportsDefaultSortDirection;
 }
 
+$reportsParseDateKey = static function ($value) {
+    $value = trim((string) $value);
+
+    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $value) !== 1) {
+        return '';
+    }
+
+    $parsedDate = DateTimeImmutable::createFromFormat('!Y-m-d', $value);
+
+    return ($parsedDate instanceof DateTimeImmutable && $parsedDate->format('Y-m-d') === $value) ? $value : '';
+};
+$reportsDateFrom = $reportsParseDateKey($_GET['reports_from'] ?? '');
+$reportsDateTo = $reportsParseDateKey($_GET['reports_to'] ?? '');
+
+if ($reportsDateFrom !== '' && $reportsDateTo !== '' && $reportsDateFrom > $reportsDateTo) {
+    $reportsSwapDate = $reportsDateFrom;
+    $reportsDateFrom = $reportsDateTo;
+    $reportsDateTo = $reportsSwapDate;
+}
+
 $reportsSelectedYearRaw = trim((string) ($_GET['reports_year'] ?? ''));
 $reportsSelectedYear = ctype_digit($reportsSelectedYearRaw)
     ? (int) $reportsSelectedYearRaw
@@ -1225,6 +1452,28 @@ $reportsSelectedYear = ctype_digit($reportsSelectedYearRaw)
 if (!in_array($reportsSelectedYear, $reportYearOptions, true)) {
     $reportsSelectedYear = (int) ($reportYearOptions[0] ?? $currentReportYear);
 }
+
+// When a date range is chosen, jump to the year the range starts in if the selected year is outside it.
+if ($reportsDateFrom !== '' || $reportsDateTo !== '') {
+    $reportsRangeStartYear = (int) substr($reportsDateFrom !== '' ? $reportsDateFrom : $reportsDateTo, 0, 4);
+    $reportsRangeEndYear = (int) substr($reportsDateTo !== '' ? $reportsDateTo : $reportsDateFrom, 0, 4);
+
+    if (($reportsSelectedYear < $reportsRangeStartYear || $reportsSelectedYear > $reportsRangeEndYear) && in_array($reportsRangeStartYear, $reportYearOptions, true)) {
+        $reportsSelectedYear = $reportsRangeStartYear;
+    }
+}
+
+$reportsRangeQuery = [];
+
+if ($reportsDateFrom !== '') {
+    $reportsRangeQuery['reports_from'] = $reportsDateFrom;
+}
+
+if ($reportsDateTo !== '') {
+    $reportsRangeQuery['reports_to'] = $reportsDateTo;
+}
+
+$reportsRangeCrossesYears = $reportsDateFrom !== '' && $reportsDateTo !== '' && substr($reportsDateFrom, 0, 4) !== substr($reportsDateTo, 0, 4);
 
 foreach ($customerBookingsRecords as $bookingRecord) {
     if (!is_array($bookingRecord)) {
@@ -1238,6 +1487,16 @@ foreach ($customerBookingsRecords as $bookingRecord) {
     }
 
     if ((int) $createdAtDateTime->format('Y') !== $reportsSelectedYear) {
+        continue;
+    }
+
+    $reportOrderDateKey = $createdAtDateTime->format('Y-m-d');
+
+    if ($reportsDateFrom !== '' && $reportOrderDateKey < $reportsDateFrom) {
+        continue;
+    }
+
+    if ($reportsDateTo !== '' && $reportOrderDateKey > $reportsDateTo) {
         continue;
     }
 
@@ -1346,6 +1605,39 @@ usort($reportRows, static function ($left, $right) use ($reportsSortColumn, $rep
     return $reportsSortDirection === 'asc' ? $comparison : -$comparison;
 });
 
+// Month list shown in the Reports table. With a From/To range, only the months inside the range
+// (within the selected year) are listed. Without a range, all 12 months are listed (default).
+$reportsVisibleStartMonth = 1;
+$reportsVisibleEndMonth = 12;
+
+if ($reportsDateFrom !== '' || $reportsDateTo !== '') {
+    if ($reportsDateFrom !== '') {
+        $reportsFromYearValue = (int) substr($reportsDateFrom, 0, 4);
+
+        if ($reportsFromYearValue > $reportsSelectedYear) {
+            $reportsVisibleStartMonth = 13; // range starts after the selected year: nothing to list
+        } elseif ($reportsFromYearValue === $reportsSelectedYear) {
+            $reportsVisibleStartMonth = (int) substr($reportsDateFrom, 5, 2);
+        }
+    }
+
+    if ($reportsDateTo !== '') {
+        $reportsToYearValue = (int) substr($reportsDateTo, 0, 4);
+
+        if ($reportsToYearValue < $reportsSelectedYear) {
+            $reportsVisibleEndMonth = 0; // range ends before the selected year: nothing to list
+        } elseif ($reportsToYearValue === $reportsSelectedYear) {
+            $reportsVisibleEndMonth = (int) substr($reportsDateTo, 5, 2);
+        }
+    }
+}
+
+$reportDisplayRows = array_values(array_filter($reportRows, static function ($row) use ($reportsVisibleStartMonth, $reportsVisibleEndMonth) {
+    $rowMonth = (int) ($row['monthNumber'] ?? 0);
+
+    return $rowMonth >= $reportsVisibleStartMonth && $rowMonth <= $reportsVisibleEndMonth;
+}));
+
 $reportsMonthNextDirection = ($reportsSortColumn === 'month' && $reportsSortDirection === 'asc')
     ? 'desc'
     : 'asc';
@@ -1361,19 +1653,19 @@ $reportsMonthSortUrl = $adminHomePath . '?' . http_build_query([
     'reports_year' => (string) $reportsSelectedYear,
     'reports_sort' => 'month',
     'reports_dir' => $reportsMonthNextDirection,
-]);
+] + $reportsRangeQuery);
 $reportsTransactionsSortUrl = $adminHomePath . '?' . http_build_query([
     'admin_view' => 'reports',
     'reports_year' => (string) $reportsSelectedYear,
     'reports_sort' => 'transactions',
     'reports_dir' => $reportsTransactionsNextDirection,
-]);
+] + $reportsRangeQuery);
 $reportsRevenueSortUrl = $adminHomePath . '?' . http_build_query([
     'admin_view' => 'reports',
     'reports_year' => (string) $reportsSelectedYear,
     'reports_sort' => 'revenue',
     'reports_dir' => $reportsRevenueNextDirection,
-]);
+] + $reportsRangeQuery);
 
 foreach ($customerBookingsRecords as $bookingRecord) {
     if (!is_array($bookingRecord)) {
@@ -1400,6 +1692,13 @@ foreach ($customerBookingsRecords as $bookingRecord) {
     $isForPickupReady = customer_order_is_for_pickup_state($bookingRecord);
     $refundProofPath = normalize_customer_order_asset_path($bookingRecord['refund_proof_path'] ?? '');
     $refundProofUploadedAt = trim((string) ($bookingRecord['refund_proof_uploaded_at'] ?? ''));
+    $handoverProofRecord = $handoverProofsByOrder[(string) ($bookingRecord['id'] ?? '')] ?? null;
+    $handoverProofPath = is_array($handoverProofRecord) ? (string) ($handoverProofRecord['path'] ?? '') : '';
+    $handoverProofUploadedAt = is_array($handoverProofRecord) ? (string) ($handoverProofRecord['uploaded_at'] ?? '') : '';
+    $handoverProofUploadedBy = is_array($handoverProofRecord) ? (string) ($handoverProofRecord['uploaded_by'] ?? '') : '';
+    $handoverProofUrl = $handoverProofPath !== ''
+        ? $assetBase . ltrim($handoverProofPath, '/')
+        : '';
     $validIdPath = normalize_customer_order_asset_path($bookingRecord['valid_id_path'] ?? '');
     $validIdUploadedAt = trim((string) ($bookingRecord['valid_id_uploaded_at'] ?? ''));
     $selfieWithIdPath = normalize_customer_order_asset_path($bookingRecord['selfie_with_id_path'] ?? '');
@@ -1533,6 +1832,7 @@ foreach ($customerBookingsRecords as $bookingRecord) {
         'time' => $bookingTimestampLabel,
         'status' => $bookingStatusLabel,
         'statusClass' => $bookingStatusClass,
+        'cancelReason' => trim((string) ($bookingRecord['cancel_reason'] ?? '')),
         'isPendingRequest' => $isPendingRequest,
         'isPriorityCustomer' => $isPriorityCustomer,
         'showPriorityStar' => $isPendingRequest && $isPriorityCustomer,
@@ -1650,6 +1950,10 @@ foreach ($customerBookingsRecords as $bookingRecord) {
         'refundProofPath' => $refundProofPath,
         'refundProofUrl' => $refundProofUrl,
         'refundProofUploadedAt' => $refundProofUploadedAt,
+        'handoverProofPath' => $handoverProofPath,
+        'handoverProofUrl' => $handoverProofUrl,
+        'handoverProofUploadedAt' => $handoverProofUploadedAt,
+        'handoverProofUploadedBy' => $handoverProofUploadedBy,
         'validIdPath' => $validIdPath,
         'validIdUrl' => $validIdUrl,
         'validIdUploadedAt' => $validIdUploadedAt,
@@ -1740,6 +2044,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'equipment_rename_status',
             'equipment_delete_status',
             'equipment_add_quantity',
+            'equipment_add_model',
+            'equipment_edit_model',
+            'equipment_remove_quantity',
             'equipment_remove_unit',
             'equipment_restore_unit'
         ];
@@ -1973,6 +2280,140 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!save_equipment_inventory_repository($equipmentInventory)) {
                     throw new RuntimeException('Unable to save equipment inventory.');
                 }
+            } elseif ($adminAction === 'equipment_add_model') {
+                $brandInput = sanitize_product_brand_label($_POST['brand'] ?? '');
+                $modelName = trim((string) preg_replace('/\s+/', ' ', (string) ($_POST['model_name'] ?? '')));
+                $categoryInput = sanitize_product_category_label($_POST['category'] ?? '');
+                $priceInput = trim((string) ($_POST['price'] ?? ''));
+                $initialQuantity = max(1, min(200, (int) ($_POST['quantity'] ?? 1)));
+                $selectedSkillLevels = normalize_product_skill_levels($_POST['skill_levels'] ?? [], false);
+
+                if ($brandInput === '') {
+                    throw new RuntimeException('Brand is required.');
+                }
+
+                if ($modelName === '') {
+                    throw new RuntimeException('Model name is required.');
+                }
+
+                if (!$selectedSkillLevels) {
+                    throw new RuntimeException('Select at least one skill level.');
+                }
+
+                if (strlen($modelName) > 60 || strlen($brandInput) > 40) {
+                    throw new RuntimeException('Brand or model name is too long.');
+                }
+
+                if ($priceInput === '') {
+                    $priceInput = '0';
+                }
+
+                if (!is_numeric($priceInput) || (float) $priceInput < 0) {
+                    throw new RuntimeException('Price must be a valid amount (0 or higher).');
+                }
+
+                $brandLabel = normalize_product_brand($brandInput);
+                $categoryLabel = normalize_product_category($categoryInput);
+
+                if (has_duplicate_product_display_name($products, $brandLabel, $modelName, '')) {
+                    throw new RuntimeException($brandLabel . ' ' . $modelName . ' already exists in the inventory.');
+                }
+
+                $newModelLabel = equipment_model_label_from_product(['brand' => $brandLabel, 'name' => $modelName]);
+
+                foreach ($products as $existingProduct) {
+                    if (is_array($existingProduct) && equipment_model_label_from_product($existingProduct) === $newModelLabel) {
+                        throw new RuntimeException('A model with the same ID (' . $newModelLabel . ') already exists.');
+                    }
+                }
+
+                $newProductKey = unique_product_key($products, $brandLabel, $modelName);
+
+                // Camera image comes from the uploaded file (no automatic guessing).
+                $cameraUpload = $_FILES['camera_image'] ?? null;
+                $cameraUploadError = is_array($cameraUpload) ? (int) ($cameraUpload['error'] ?? UPLOAD_ERR_NO_FILE) : UPLOAD_ERR_NO_FILE;
+
+                if ($cameraUploadError === UPLOAD_ERR_NO_FILE) {
+                    throw new RuntimeException('Please add a camera image.');
+                }
+
+                if ($cameraUploadError !== UPLOAD_ERR_OK) {
+                    throw new RuntimeException('Camera image upload failed. Try a smaller file.');
+                }
+
+                $cameraUploadTmp = (string) ($cameraUpload['tmp_name'] ?? '');
+
+                if ($cameraUploadTmp === '' || !is_uploaded_file($cameraUploadTmp)) {
+                    throw new RuntimeException('Camera image upload was not valid.');
+                }
+
+                if ((int) ($cameraUpload['size'] ?? 0) > 5 * 1024 * 1024) {
+                    throw new RuntimeException('Camera image must be 5 MB or smaller.');
+                }
+
+                $cameraImageInfo = @getimagesize($cameraUploadTmp);
+                $allowedCameraImageTypes = ['image/png' => 'png', 'image/jpeg' => 'jpeg', 'image/webp' => 'webp'];
+                $cameraImageMime = is_array($cameraImageInfo) ? (string) ($cameraImageInfo['mime'] ?? '') : '';
+
+                if (!isset($allowedCameraImageTypes[$cameraImageMime])) {
+                    throw new RuntimeException('Camera image must be a PNG, JPG, or WEBP file.');
+                }
+
+                $cameraImageBinary = file_get_contents($cameraUploadTmp);
+
+                if ($cameraImageBinary === false) {
+                    throw new RuntimeException('Unable to read the uploaded camera image.');
+                }
+
+                $newImagePath = save_product_image_from_data_url(
+                    'data:image/' . $allowedCameraImageTypes[$cameraImageMime] . ';base64,' . base64_encode($cameraImageBinary),
+                    $brandLabel,
+                    $modelName,
+                    __DIR__
+                );
+
+                ensure_product_brand_exists($brandLabel);
+                ensure_product_category_exists($categoryLabel);
+
+                $products[$newProductKey] = [
+                    'brand' => $brandLabel,
+                    'name' => $modelName,
+                    'skillLevels' => $selectedSkillLevels,
+                    'skillLevel' => (string) $selectedSkillLevels[0],
+                    'category' => $categoryLabel,
+                    'price' => number_format((float) $priceInput, 2, '.', ''),
+                    'discountPercent' => 0,
+                    'spec1' => 'New camera specification 1',
+                    'spec2' => 'New camera specification 2',
+                    'tagline' => 'Add a short product tagline.',
+                    'cameraImage' => $newImagePath,
+                    'informationImages' => [],
+                    'captureSlides' => [],
+                    'specs' => [
+                        'Brand' => [$brandLabel],
+                        'Imaging and Performance' => ['Add imaging and performance details.'],
+                        'Video' => ['Add video details.'],
+                        'Physical Specifications' => ['Add physical specifications.']
+                    ],
+                    'recommendations' => []
+                ];
+
+                if (!save_products_repository($products)) {
+                    throw new RuntimeException('Unable to save the new camera model.');
+                }
+
+                // Sync creates the first unit automatically; add the rest of the requested quantity.
+                $equipmentInventory = sync_equipment_inventory_with_products($products, $equipmentInventory, 12);
+
+                if ($initialQuantity > 1) {
+                    $equipmentInventory = add_equipment_inventory_units($equipmentInventory, $newProductKey, $initialQuantity - 1);
+                }
+
+                if (!save_equipment_inventory_repository($equipmentInventory)) {
+                    throw new RuntimeException('Unable to save equipment inventory.');
+                }
+
+                $flashMessage = 'Added ' . $brandLabel . ' ' . $modelName . ' with ' . $initialQuantity . ' unit(s). Open its product page to update the specs and tagline.';
             } elseif ($adminAction === 'equipment_remove_unit') {
                 $productKey = trim((string) ($_POST['product_key'] ?? ''));
                 $serial = (int) ($_POST['serial'] ?? -1);
@@ -2079,6 +2520,282 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
 
                     $flashMessage = 'Equipment unit removed from active inventory.';
+                }
+            } elseif ($adminAction === 'equipment_edit_model') {
+                $productKey = trim((string) ($_POST['product_key'] ?? ''));
+
+                if ($productKey === '' || !isset($products[$productKey]) || !is_array($products[$productKey])) {
+                    throw new RuntimeException('Camera model was not found.');
+                }
+
+                $brandInput = sanitize_product_brand_label($_POST['brand'] ?? '');
+                $modelName = trim((string) preg_replace('/\s+/', ' ', (string) ($_POST['model_name'] ?? '')));
+                $categoryInput = sanitize_product_category_label($_POST['category'] ?? '');
+                $priceInput = trim((string) ($_POST['price'] ?? ''));
+                $discountInput = trim((string) ($_POST['discount_percent'] ?? ''));
+                $taglineInput = trim((string) preg_replace('/\s+/', ' ', (string) ($_POST['tagline'] ?? '')));
+                $spec1Input = trim((string) preg_replace('/\s+/', ' ', (string) ($_POST['spec1'] ?? '')));
+                $spec2Input = trim((string) preg_replace('/\s+/', ' ', (string) ($_POST['spec2'] ?? '')));
+                $selectedSkillLevels = normalize_product_skill_levels($_POST['skill_levels'] ?? [], false);
+
+                if ($brandInput === '') {
+                    throw new RuntimeException('Brand is required.');
+                }
+
+                if ($modelName === '') {
+                    throw new RuntimeException('Model name is required.');
+                }
+
+                if (strlen($modelName) > 60 || strlen($brandInput) > 40) {
+                    throw new RuntimeException('Brand or model name is too long.');
+                }
+
+                if (!$selectedSkillLevels) {
+                    throw new RuntimeException('Select at least one skill level.');
+                }
+
+                if ($priceInput === '') {
+                    $priceInput = '0';
+                }
+
+                if (!is_numeric($priceInput) || (float) $priceInput < 0) {
+                    throw new RuntimeException('Price must be a valid amount (0 or higher).');
+                }
+
+                if ($discountInput === '') {
+                    $discountInput = '0';
+                }
+
+                if (!is_numeric($discountInput) || (float) $discountInput < 0 || (float) $discountInput > 100) {
+                    throw new RuntimeException('Discount must be between 0 and 100.');
+                }
+
+                if (strlen($taglineInput) > 200 || strlen($spec1Input) > 120 || strlen($spec2Input) > 120) {
+                    throw new RuntimeException('Tagline or specification text is too long.');
+                }
+
+                $brandLabel = normalize_product_brand($brandInput);
+                $categoryLabel = normalize_product_category($categoryInput);
+
+                if (has_duplicate_product_display_name($products, $brandLabel, $modelName, $productKey)) {
+                    throw new RuntimeException($brandLabel . ' ' . $modelName . ' already exists in the inventory.');
+                }
+
+                $editedModelLabel = equipment_model_label_from_product(['brand' => $brandLabel, 'name' => $modelName]);
+
+                foreach ($products as $otherProductKey => $otherProduct) {
+                    if ((string) $otherProductKey === $productKey || !is_array($otherProduct)) {
+                        continue;
+                    }
+
+                    if (equipment_model_label_from_product($otherProduct) === $editedModelLabel) {
+                        throw new RuntimeException('A model with the same ID (' . $editedModelLabel . ') already exists.');
+                    }
+                }
+
+                // Optional new camera image. Leaving it empty keeps the current image.
+                $editedImagePath = '';
+                $editUpload = $_FILES['camera_image'] ?? null;
+                $editUploadError = is_array($editUpload) ? (int) ($editUpload['error'] ?? UPLOAD_ERR_NO_FILE) : UPLOAD_ERR_NO_FILE;
+
+                if ($editUploadError !== UPLOAD_ERR_NO_FILE) {
+                    if ($editUploadError !== UPLOAD_ERR_OK) {
+                        throw new RuntimeException('Camera image upload failed. Try a smaller file.');
+                    }
+
+                    $editUploadTmp = (string) ($editUpload['tmp_name'] ?? '');
+
+                    if ($editUploadTmp === '' || !is_uploaded_file($editUploadTmp)) {
+                        throw new RuntimeException('Camera image upload was not valid.');
+                    }
+
+                    if ((int) ($editUpload['size'] ?? 0) > 5 * 1024 * 1024) {
+                        throw new RuntimeException('Camera image must be 5 MB or smaller.');
+                    }
+
+                    $editImageInfo = @getimagesize($editUploadTmp);
+                    $allowedEditImageTypes = ['image/png' => 'png', 'image/jpeg' => 'jpeg', 'image/webp' => 'webp'];
+                    $editImageMime = is_array($editImageInfo) ? (string) ($editImageInfo['mime'] ?? '') : '';
+
+                    if (!isset($allowedEditImageTypes[$editImageMime])) {
+                        throw new RuntimeException('Camera image must be a PNG, JPG, or WEBP file.');
+                    }
+
+                    $editImageBinary = file_get_contents($editUploadTmp);
+
+                    if ($editImageBinary === false) {
+                        throw new RuntimeException('Unable to read the uploaded camera image.');
+                    }
+
+                    $editedImagePath = save_product_image_from_data_url(
+                        'data:image/' . $allowedEditImageTypes[$editImageMime] . ';base64,' . base64_encode($editImageBinary),
+                        $brandLabel,
+                        $modelName,
+                        __DIR__
+                    );
+                }
+
+                ensure_product_brand_exists($brandLabel);
+                ensure_product_category_exists($categoryLabel);
+
+                // The product key never changes, so bookings and unit IDs stay linked to this model.
+                $editedProduct = $products[$productKey];
+                $editedProduct['brand'] = $brandLabel;
+                $editedProduct['name'] = $modelName;
+                $editedProduct['category'] = $categoryLabel;
+                $editedProduct['skillLevels'] = $selectedSkillLevels;
+                $editedProduct['skillLevel'] = (string) $selectedSkillLevels[0];
+                $editedProduct['price'] = number_format((float) $priceInput, 2, '.', '');
+                $editedDiscount = round((float) $discountInput, 2);
+                $editedProduct['discountPercent'] = $editedDiscount == (int) $editedDiscount ? (int) $editedDiscount : $editedDiscount;
+
+                if ($taglineInput !== '') {
+                    $editedProduct['tagline'] = $taglineInput;
+                }
+
+                if ($spec1Input !== '') {
+                    $editedProduct['spec1'] = $spec1Input;
+                }
+
+                if ($spec2Input !== '') {
+                    $editedProduct['spec2'] = $spec2Input;
+                }
+
+                if ($editedImagePath !== '') {
+                    $editedProduct['cameraImage'] = $editedImagePath;
+                }
+
+                if (isset($editedProduct['specs']) && is_array($editedProduct['specs']) && array_key_exists('Brand', $editedProduct['specs'])) {
+                    $editedProduct['specs']['Brand'] = [$brandLabel];
+                }
+
+                $products[$productKey] = $editedProduct;
+
+                if (!save_products_repository($products)) {
+                    throw new RuntimeException('Unable to save the camera details.');
+                }
+
+                $flashMessage = 'Updated ' . $brandLabel . ' ' . $modelName . '.';
+            } elseif ($adminAction === 'equipment_remove_quantity') {
+                $productKey = trim((string) ($_POST['product_key'] ?? ''));
+                $removeCount = (int) ($_POST['remove_count'] ?? 0);
+
+                if ($productKey === '' || !isset($products[$productKey]) || !is_array($products[$productKey])) {
+                    throw new RuntimeException('Featured product was not found.');
+                }
+
+                if (!isset($equipmentInventory[$productKey]) || !is_array($equipmentInventory[$productKey])) {
+                    throw new RuntimeException('Equipment model was not found in inventory.');
+                }
+
+                $activeUnits = isset($equipmentInventory[$productKey]['units']) && is_array($equipmentInventory[$productKey]['units'])
+                    ? array_values($equipmentInventory[$productKey]['units'])
+                    : [];
+                $activeCount = count($activeUnits);
+
+                if ($activeCount < 1) {
+                    throw new RuntimeException('No active equipment units found for this product.');
+                }
+
+                if ($removeCount < 1) {
+                    throw new RuntimeException('Enter a quantity of at least 1.');
+                }
+
+                if ($removeCount > $activeCount) {
+                    throw new RuntimeException('You can remove at most ' . $activeCount . ' unit(s) from this model.');
+                }
+
+                // Remove the newest unit IDs first, skipping units locked by an ongoing booking.
+                $removableUnits = array_values(array_filter($activeUnits, static function ($unit) {
+                    return normalize_equipment_status_token($unit['status'] ?? '') !== 'in-use';
+                }));
+                usort($removableUnits, static function ($left, $right) {
+                    return ((int) ($right['serial'] ?? 0)) <=> ((int) ($left['serial'] ?? 0));
+                });
+
+                if ($removeCount > count($removableUnits)) {
+                    throw new RuntimeException('Only ' . count($removableUnits) . ' unit(s) can be removed right now. The rest are in use by a booking.');
+                }
+
+                $serialsToRemove = [];
+
+                foreach (array_slice($removableUnits, 0, $removeCount) as $unitToRemove) {
+                    $serialsToRemove[] = (int) ($unitToRemove['serial'] ?? -1);
+                }
+
+                $candidateInventory = $equipmentInventory;
+                $candidateInventory[$productKey]['units'] = array_values(array_filter($activeUnits, static function ($unit) use ($serialsToRemove) {
+                    return !in_array((int) ($unit['serial'] ?? -1), $serialsToRemove, true);
+                }));
+                $assertEquipmentCapacity($productKey, $candidateInventory);
+
+                if ($removeCount >= $activeCount) {
+                    if (customer_order_peak_reserved_quantity($equipmentReservationIntervals[normalize_customer_order_product_key($productKey)] ?? [], time()) > 0) {
+                        throw new RuntimeException('Cannot archive a model that still has reservations. Resolve the affected bookings first.');
+                    }
+
+                    $archiveProductResult = archive_product_record($products, $productKey, __DIR__);
+                    $archiveProductKey = trim((string) ($archiveProductResult['archivedEntry']['archiveKey'] ?? ''));
+
+                    $archiveInventoryResult = archive_all_equipment_units_for_product(
+                        $equipmentInventory,
+                        $archivedEquipmentUnits,
+                        $products,
+                        $productKey,
+                        'Archived because all units were removed.',
+                        $archiveProductKey
+                    );
+
+                    $equipmentInventory = $archiveInventoryResult['inventory'];
+                    $archivedEquipmentUnits = $archiveInventoryResult['archivedUnits'];
+                    $products = $archiveProductResult['products'];
+
+                    if (!save_archived_products_repository($archiveProductResult['archivedProducts'])) {
+                        throw new RuntimeException('Unable to save archived products.');
+                    }
+
+                    if (!save_products_repository($products)) {
+                        throw new RuntimeException('Unable to save active products.');
+                    }
+
+                    if (!save_archived_equipment_units_repository($archivedEquipmentUnits)) {
+                        throw new RuntimeException('Unable to save removed equipment list.');
+                    }
+
+                    $equipmentInventory = sync_equipment_inventory_with_products($products, $equipmentInventory, 12);
+
+                    if (!save_equipment_inventory_repository($equipmentInventory)) {
+                        throw new RuntimeException('Unable to save equipment inventory.');
+                    }
+
+                    $flashType = 'warning';
+                    $flashMessage = 'All ' . $removeCount . ' unit(s) removed. The model was archived together with its equipment units.';
+                } else {
+                    foreach ($serialsToRemove as $serialToRemove) {
+                        $archiveUnitResult = archive_equipment_unit(
+                            $equipmentInventory,
+                            $archivedEquipmentUnits,
+                            $products,
+                            $productKey,
+                            $serialToRemove,
+                            'Removed from active inventory'
+                        );
+
+                        $equipmentInventory = $archiveUnitResult['inventory'];
+                        $archivedEquipmentUnits = $archiveUnitResult['archivedUnits'];
+                    }
+
+                    if (!save_archived_equipment_units_repository($archivedEquipmentUnits)) {
+                        throw new RuntimeException('Unable to save removed equipment list.');
+                    }
+
+                    $equipmentInventory = sync_equipment_inventory_with_products($products, $equipmentInventory, 12);
+
+                    if (!save_equipment_inventory_repository($equipmentInventory)) {
+                        throw new RuntimeException('Unable to save equipment inventory.');
+                    }
+
+                    $flashMessage = 'Removed ' . $removeCount . ' unit(s). ' . ($activeCount - $removeCount) . ' unit(s) remaining.';
                 }
             } elseif ($adminAction === 'equipment_restore_unit') {
                 $openArchiveOnRedirect = true;
@@ -2561,6 +3278,7 @@ foreach ($adminBookingDetails as $bookingDetail) {
         'orderNumber' => (string) ($bookingDetail['orderNumber'] ?? ''),
         'customerName' => (string) ($bookingDetail['name'] ?? 'Customer'),
         'status' => (string) ($bookingDetail['status'] ?? 'PENDING'),
+        'statusToken' => $statusToken,
         'statusClass' => (string) ($bookingDetail['statusClass'] ?? 'status-pending'),
         'receiveDate' => trim((string) ($bookingDetail['receiveDate'] ?? '')),
         'receiveTime' => trim((string) ($bookingDetail['receiveTime'] ?? '')),
@@ -2574,6 +3292,16 @@ foreach ($adminBookingDetails as $bookingDetail) {
 }
 
 usort($dashboardPriorityReservedItems, static function ($left, $right) {
+    // Priority by status tag: Pending first, then For Return, then Approved (Ongoing last).
+    $statusPriority = ['pending' => 0, 'return' => 1, 'approved' => 2, 'ongoing' => 3];
+    $leftPriority = $statusPriority[(string) ($left['statusToken'] ?? '')] ?? 99;
+    $rightPriority = $statusPriority[(string) ($right['statusToken'] ?? '')] ?? 99;
+
+    if ($leftPriority !== $rightPriority) {
+        return $leftPriority <=> $rightPriority;
+    }
+
+    // Same status: earliest receive date first, then newest order.
     $leftKey = trim((string) ($left['receiveDate'] ?? '')) . ' ' . trim((string) ($left['receiveTime'] ?? ''));
     $rightKey = trim((string) ($right['receiveDate'] ?? '')) . ' ' . trim((string) ($right['receiveTime'] ?? ''));
 
@@ -2605,7 +3333,39 @@ foreach ($equipmentRows as $equipmentRow) {
     ];
 }
 
+// Units held by Pending, Approved, Ongoing and For Return orders, counted per product key.
+if (!function_exists('admin_dashboard_reserved_units_by_product')) {
+    function admin_dashboard_reserved_units_by_product($orders, $products)
+    {
+        $reserved = [];
+
+        if (!is_array($orders) || !is_array($products) || !$products) {
+            return $reserved;
+        }
+
+        $nameLookup = customer_order_product_name_lookup_map($products);
+
+        foreach ($orders as $order) {
+            // Pending, Approved, Ongoing and For Return orders hold stock.
+            // Completed, cancelled, refunded, etc. give it back automatically.
+            if (!customer_order_record_occupies_inventory($order)) {
+                continue;
+            }
+
+            $requirements = customer_order_extract_camera_item_requirements($order['items'] ?? [], $products, $nameLookup);
+
+            foreach ($requirements as $requirementKey => $requirement) {
+                $requirementKey = (string) $requirementKey;
+                $reserved[$requirementKey] = ($reserved[$requirementKey] ?? 0) + (int) ($requirement['qty'] ?? 0);
+            }
+        }
+
+        return $reserved;
+    }
+}
+
 $availableEquipmentSortRows = [];
+$reservedUnitsByProduct = admin_dashboard_reserved_units_by_product($customerBookingsRecords ?? [], $products);
 
 foreach ($products as $productKey => $productPayload) {
     if (!is_array($productPayload)) {
@@ -2614,17 +3374,24 @@ foreach ($products as $productKey => $productPayload) {
 
     $inventoryEntry = normalize_equipment_inventory_entry($equipmentInventory[$productKey] ?? [], 12, false);
     $inventoryUnits = is_array($inventoryEntry['units'] ?? null) ? $inventoryEntry['units'] : [];
-    $availableUnits = 0;
+
+    if (!$inventoryUnits) {
+        continue;
+    }
+
+    // Usable units = Available or In Use (maintenance / damaged units are not usable).
+    $usableUnits = 0;
 
     foreach ($inventoryUnits as $inventoryUnit) {
-        if (normalize_equipment_status_token($inventoryUnit['status'] ?? 'available') === 'available') {
-            $availableUnits++;
+        if (customer_order_unit_counts_for_capacity($inventoryUnit)) {
+            $usableUnits++;
         }
     }
 
-    if ($availableUnits < 1) {
-        continue;
-    }
+    // Orders already marked In Use are inside $usableUnits, so subtracting every
+    // reserving order once is correct and nothing is counted twice.
+    $reservedUnits = (int) ($reservedUnitsByProduct[(string) $productKey] ?? 0);
+    $availableUnits = max(0, $usableUnits - $reservedUnits);
 
     $brandLabel = normalize_product_brand($productPayload['brand'] ?? 'Gear');
     $productName = trim((string) ($productPayload['name'] ?? 'Equipment'));
@@ -2918,6 +3685,7 @@ $businessReportServicesRows = array_map(static function ($group) {
 
 $adminBusinessReportPayload = [
     'businessName' => 'THE NIFTY FIFTY',
+    'logoUrl' => is_file(__DIR__ . '/assets/images/main_logo.png') ? $assetBase . 'assets/images/main_logo.png' : '',
     'year' => (int) $currentReportYear,
     'generatedAt' => (new DateTimeImmutable('now', admin_local_timezone()))->format('M d, Y h:i A'),
     'summary' => [
@@ -3217,6 +3985,20 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
                     </span>
                 </a>
 
+                <div class="dropdown topbar-account-menu topbar-manage-menu" data-admin-manage-menu>
+                    <button class="account-pill account-pill-toggle dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" data-admin-manage-toggle>
+                        Manage
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end account-dropdown-menu">
+                        <li><a class="dropdown-item" data-admin-manage-link="equipments" href="<?php echo htmlspecialchars($adminHomePath . '?admin_view=equipments', ENT_QUOTES, 'UTF-8'); ?>">Equipments</a></li>
+                        <li><a class="dropdown-item" data-admin-manage-link="bookings" href="<?php echo htmlspecialchars($adminHomePath . '?admin_view=bookings', ENT_QUOTES, 'UTF-8'); ?>">Reservations</a></li>
+                        <?php if (!$isStaffSession): ?>
+                            <li><a class="dropdown-item" data-admin-manage-link="reports" href="<?php echo htmlspecialchars($adminHomePath . '?admin_view=reports', ENT_QUOTES, 'UTF-8'); ?>">Reports</a></li>
+                            <li><a class="dropdown-item" data-admin-manage-link="users" href="<?php echo htmlspecialchars($adminHomePath . '?admin_view=users', ENT_QUOTES, 'UTF-8'); ?>">Users</a></li>
+                        <?php endif; ?>
+                    </ul>
+                </div>
+
                 <div class="dropdown topbar-account-menu">
                     <button class="account-pill account-pill-toggle dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                         <?php echo htmlspecialchars($accountLabel, ENT_QUOTES, 'UTF-8'); ?>
@@ -3226,6 +4008,7 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
                             <li><a class="dropdown-item" href="<?php echo htmlspecialchars($adminHomePath, ENT_QUOTES, 'UTF-8'); ?>">Admin Home</a></li>
                             <li><a class="dropdown-item" href="<?php echo htmlspecialchars($manageBrandsPath, ENT_QUOTES, 'UTF-8'); ?>">Manage Products</a></li>
                             <li><a class="dropdown-item" href="<?php echo htmlspecialchars($manageCategoriesPath, ENT_QUOTES, 'UTF-8'); ?>">Manage Categories</a></li>
+                            <li><a class="dropdown-item" href="<?php echo htmlspecialchars($manageMeetingPlacesPath, ENT_QUOTES, 'UTF-8'); ?>">Manage Meeting Places</a></li>
                             <li><a class="dropdown-item" href="<?php echo htmlspecialchars($assetBase . 'archive/', ENT_QUOTES, 'UTF-8'); ?>">Archived</a></li>
                             <li><a class="dropdown-item" href="<?php echo htmlspecialchars($setGcashQrPath, ENT_QUOTES, 'UTF-8'); ?>">Set GCash QR</a></li>
                             <li><a class="dropdown-item" href="<?php echo htmlspecialchars($editTocPath, ENT_QUOTES, 'UTF-8'); ?>">Edit TOC</a></li>
@@ -3257,12 +4040,12 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
                     </div>
 
                 <?php else: ?>
-                    <span class="section-nav-section is-active admin-nav-primary" data-admin-nav-item="primary" aria-current="page">DASHBOARD</span>
+                    <a class="section-nav-section admin-nav-primary<?php echo $initialAdminPanel === '' ? ' is-active' : ''; ?>" data-admin-nav-item="primary" data-admin-nav-dashboard-link href="<?php echo htmlspecialchars($adminHomePath, ENT_QUOTES, 'UTF-8'); ?>"<?php echo $initialAdminPanel === '' ? ' aria-current="page"' : ''; ?>>DASHBOARD</a>
                     <a class="section-nav-section admin-nav-primary" data-admin-nav-item="primary" href="<?php echo htmlspecialchars($routeBase . 'services/', ENT_QUOTES, 'UTF-8'); ?>">SERVICES</a>
                     <a class="section-nav-section admin-nav-primary" data-admin-nav-item="primary" href="<?php echo htmlspecialchars($featuredProductsPath, ENT_QUOTES, 'UTF-8'); ?>">PRODUCTS</a>
                 <?php endif; ?>
             <?php else: ?>
-                <span class="section-nav-section is-active admin-nav-primary" data-admin-nav-item="primary" aria-current="page">DASHBOARD</span>
+                <a class="section-nav-section admin-nav-primary<?php echo $initialAdminPanel === '' ? ' is-active' : ''; ?>" data-admin-nav-item="primary" data-admin-nav-dashboard-link href="<?php echo htmlspecialchars($adminHomePath, ENT_QUOTES, 'UTF-8'); ?>"<?php echo $initialAdminPanel === '' ? ' aria-current="page"' : ''; ?>>DASHBOARD</a>
             <?php endif; ?>
 
             <button class="section-nav-section admin-nav-alt" type="button" data-admin-nav-item="swapped" data-admin-nav-pill data-admin-panel-target="equipments" hidden>EQUIPMENTS</button>
@@ -3272,7 +4055,7 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
                 <button class="section-nav-section admin-nav-alt" type="button" data-admin-nav-item="swapped" data-admin-nav-pill data-admin-panel-target="users" hidden>USERS</button>
             <?php endif; ?>
 
-            <button class="section-nav-swap" type="button" data-admin-nav-swap aria-pressed="false" aria-label="Swap dashboard navigation" title="Show management bar">
+            <button class="section-nav-swap" type="button" data-admin-nav-swap aria-pressed="false" aria-label="Swap dashboard navigation" title="Show management bar" hidden tabindex="-1" style="display:none !important;">
                 <img src="<?php echo htmlspecialchars($assetBase, ENT_QUOTES, 'UTF-8'); ?>assets/icons/swap_horizontal_arrows.svg" alt="" aria-hidden="true">
             </button>
 
@@ -3291,9 +4074,12 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
             <div class="admin-equipments-head">
                 <h2>Equipment Inventory</h2>
                 <?php if (!$isStaffSession): ?>
-                    <button class="admin-equipments-archive-open" type="button" data-admin-equipment-archive-open>
-                        Removed Items (<?php echo htmlspecialchars((string) $archivedEquipmentCount, ENT_QUOTES, 'UTF-8'); ?>)
-                    </button>
+                    <div class="admin-equipments-head-actions">
+                        <button class="admin-equipments-addcam-open" type="button" data-admin-add-camera-open>+ Add Camera</button>
+                        <button class="admin-equipments-archive-open" type="button" data-admin-equipment-archive-open>
+                            Removed Items (<?php echo htmlspecialchars((string) $archivedEquipmentCount, ENT_QUOTES, 'UTF-8'); ?>)
+                        </button>
+                    </div>
                 <?php endif; ?>
             </div>
 
@@ -3363,12 +4149,33 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
                                         <?php if ($isStaffSession): ?>
                                             <span class="admin-equipments-actions-disabled">Status only</span>
                                         <?php else: ?>
+                                            <?php
+                                                $editProductData = isset($products[$equipmentProductKey]) && is_array($products[$equipmentProductKey]) ? $products[$equipmentProductKey] : [];
+                                                $editSkillLevels = normalize_product_skill_levels($editProductData['skillLevels'] ?? ($editProductData['skillLevel'] ?? default_product_skill_level()));
+                                                $editImageRelative = ltrim((string) ($editProductData['cameraImage'] ?? ''), '/');
+                                            ?>
+                                            <div class="admin-equipment-actions-group">
+                                            <button class="admin-equipment-edit-btn" type="button" data-admin-edit-camera-open
+                                                data-product-key="<?php echo htmlspecialchars($equipmentProductKey, ENT_QUOTES, 'UTF-8'); ?>"
+                                                data-model-label="<?php echo htmlspecialchars((string) $equipmentGroup['model'], ENT_QUOTES, 'UTF-8'); ?>"
+                                                data-brand="<?php echo htmlspecialchars(normalize_product_brand($editProductData['brand'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
+                                                data-name="<?php echo htmlspecialchars((string) ($editProductData['name'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
+                                                data-category="<?php echo htmlspecialchars(normalize_product_category($editProductData['category'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
+                                                data-skills="<?php echo htmlspecialchars(implode('|', $editSkillLevels), ENT_QUOTES, 'UTF-8'); ?>"
+                                                data-price="<?php echo htmlspecialchars((string) ($editProductData['price'] ?? '0.00'), ENT_QUOTES, 'UTF-8'); ?>"
+                                                data-discount="<?php echo htmlspecialchars((string) ($editProductData['discountPercent'] ?? 0), ENT_QUOTES, 'UTF-8'); ?>"
+                                                data-tagline="<?php echo htmlspecialchars((string) ($editProductData['tagline'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
+                                                data-spec1="<?php echo htmlspecialchars((string) ($editProductData['spec1'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
+                                                data-spec2="<?php echo htmlspecialchars((string) ($editProductData['spec2'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
+                                                data-image="<?php echo $editImageRelative !== '' ? htmlspecialchars($assetBase . $editImageRelative, ENT_QUOTES, 'UTF-8') : ''; ?>"
+                                                aria-label="Edit <?php echo htmlspecialchars((string) $equipmentGroup['model'], ENT_QUOTES, 'UTF-8'); ?>">Edit</button>
                                             <form method="post" action="" class="admin-equipments-action-form">
                                                 <input type="hidden" name="admin_action" value="equipment_add_quantity">
                                                 <input type="hidden" name="product_key" value="<?php echo htmlspecialchars($equipmentProductKey, ENT_QUOTES, 'UTF-8'); ?>">
                                                 <input type="hidden" name="quantity" value="1">
                                                 <button class="admin-equipments-action admin-equipments-action-add admin-equipment-add-units" type="submit" data-admin-equipment-add data-model="<?php echo htmlspecialchars((string) $equipmentGroup['model'], ENT_QUOTES, 'UTF-8'); ?>" aria-label="Add units to <?php echo htmlspecialchars((string) $equipmentGroup['model'], ENT_QUOTES, 'UTF-8'); ?>">+ Add units</button>
                                             </form>
+                                            </div>
                                         <?php endif; ?>
                                     </td>
                                 </tr>
@@ -3418,6 +4225,16 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
                                                     <?php if (!$equipmentUnitCount): ?><tr><td colspan="3">No active units. Add units to make this model rentable.</td></tr><?php endif; ?>
                                                 </tbody>
                                             </table>
+                                            <?php if (!$isStaffSession && $equipmentUnitCount > 0): ?>
+                                                <form class="admin-equipment-bulk-remove" method="post" action="" data-admin-bulk-remove data-total="<?php echo $equipmentUnitCount; ?>" data-model="<?php echo htmlspecialchars((string) $equipmentGroup['model'], ENT_QUOTES, 'UTF-8'); ?>">
+                                                    <input type="hidden" name="admin_action" value="equipment_remove_quantity">
+                                                    <input type="hidden" name="product_key" value="<?php echo htmlspecialchars($equipmentProductKey, ENT_QUOTES, 'UTF-8'); ?>">
+                                                    <label for="<?php echo $equipmentGroupId; ?>-remove-qty">Remove QTY:</label>
+                                                    <input id="<?php echo $equipmentGroupId; ?>-remove-qty" type="number" name="remove_count" min="1" max="<?php echo $equipmentUnitCount; ?>" step="1" value="1" required>
+                                                    <button class="admin-equipment-bulk-remove-btn" type="submit">Remove QTY</button>
+                                                    <small>Max <?php echo $equipmentUnitCount; ?>. Newest unit IDs are removed first. Removing all <?php echo $equipmentUnitCount; ?> archives the model.</small>
+                                                </form>
+                                            <?php endif; ?>
                                         </div>
                                     </td>
                                 </tr>
@@ -3466,9 +4283,16 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
                                     <td class="admin-bookings-camera-col"><?php echo htmlspecialchars((string) ($booking['itemsSummary'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
                                     <td><?php echo htmlspecialchars((string) ($booking['time'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
                                     <td>
-                                        <span class="admin-bookings-status <?php echo htmlspecialchars((string) ($booking['statusClass'] ?? 'status-pending'), ENT_QUOTES, 'UTF-8'); ?>">
-                                            <?php echo htmlspecialchars((string) ($booking['status'] ?? 'PENDING'), ENT_QUOTES, 'UTF-8'); ?>
-                                        </span>
+                                        <?php $bookingCancelReason = trim((string) ($booking['cancelReason'] ?? '')); ?>
+                                        <div class="admin-bookings-status-wrap">
+                                            <span class="admin-bookings-status <?php echo htmlspecialchars((string) ($booking['statusClass'] ?? 'status-pending'), ENT_QUOTES, 'UTF-8'); ?>">
+                                                <?php echo htmlspecialchars((string) ($booking['status'] ?? 'PENDING'), ENT_QUOTES, 'UTF-8'); ?>
+                                            </span>
+                                            <?php if ($bookingCancelReason !== ''): ?>
+                                                <button type="button" class="admin-bookings-reason-toggle" aria-expanded="false" aria-label="Show cancellation reason" title="Show cancellation reason" onclick="event.stopPropagation();var w=this.closest('.admin-bookings-status-wrap');var r=w.querySelector('.admin-bookings-cancel-reason');var open=r.hidden;r.hidden=!open;this.setAttribute('aria-expanded',open?'true':'false');this.classList.toggle('is-open',open);" onkeydown="event.stopPropagation();"></button>
+                                                <span class="admin-bookings-cancel-reason" hidden>Reason: <?php echo htmlspecialchars($bookingCancelReason, ENT_QUOTES, 'UTF-8'); ?></span>
+                                            <?php endif; ?>
+                                        </div>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
@@ -3505,7 +4329,17 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
                 </section>
 
                 <section class="admin-booking-detail-page" data-admin-booking-page="images" hidden>
+                    <h3 class="admin-booking-detail-subtitle">Images</h3>
                     <div class="admin-booking-detail-media-grid">
+                        <div class="admin-booking-detail-handover-wrap" data-admin-handover-images-wrap hidden>
+                            <h3>Handover Photo</h3>
+                            <p class="admin-booking-detail-media-state"><strong>Status:</strong> <span>Uploaded</span></p>
+                            <a class="admin-booking-detail-receipt-link" href="#" target="_blank" rel="noopener" data-admin-handover-images-link>
+                                <img src="" alt="Handover photo with the customer" data-admin-handover-images-image>
+                            </a>
+                            <p class="admin-booking-detail-receipt-meta" data-admin-handover-images-meta></p>
+                        </div>
+
                         <div class="admin-booking-detail-receipt-wrap" data-admin-booking-detail-receipt-wrap hidden>
                             <h3>Payment Receipt</h3>
                             <p class="admin-booking-detail-media-state"><strong>Status:</strong> <span data-admin-booking-detail-receipt-state>-</span></p>
@@ -3569,6 +4403,7 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
                 </section>
 
                 <section class="admin-booking-detail-page" data-admin-booking-page="details" hidden>
+                    <h3 class="admin-booking-detail-subtitle">Order Details</h3>
                     <div class="admin-booking-detail-grid">
                         <p><strong>Name:</strong> <span data-admin-booking-detail-name>-</span></p>
                         <p><strong>Email:</strong> <span data-admin-booking-detail-email>-</span></p>
@@ -3593,6 +4428,21 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
 
                     <p class="admin-booking-detail-status-note" data-admin-booking-detail-status-note hidden></p>
                 </section>
+
+                <div class="admin-handover-proof" data-admin-handover-proof hidden>
+                    <h3 class="admin-handover-proof-title">Handover Photo</h3>
+                    <p class="admin-handover-proof-copy" data-admin-handover-status>Take a photo of the handover with the customer. It is required before you can confirm the handover.</p>
+                    <div class="admin-handover-proof-row">
+                        <input type="file" accept="image/png,image/jpeg,image/webp" data-admin-handover-file hidden>
+                        <span class="admin-handover-proof-filename" data-admin-handover-filename>No file selected</span>
+                        <button type="button" class="admin-handover-proof-btn is-select" data-admin-handover-select>Select Photo</button>
+                        <button type="button" class="admin-handover-proof-btn is-upload" data-admin-handover-upload>Upload Photo</button>
+                    </div>
+                    <p class="admin-handover-proof-error" data-admin-handover-error role="alert" hidden></p>
+                    <a class="admin-handover-proof-preview" href="#" target="_blank" rel="noopener" data-admin-handover-preview hidden>
+                        <img src="" alt="Uploaded handover photo" data-admin-handover-preview-image>
+                    </a>
+                </div>
 
                 <form class="admin-booking-detail-actions" method="post" action="<?php echo htmlspecialchars($assetBase . 'admin/dashboard/update_booking_status.php', ENT_QUOTES, 'UTF-8'); ?>" data-admin-booking-status-form>
                     <input type="hidden" name="order_id" value="" data-admin-booking-status-order-id>
@@ -3748,9 +4598,28 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
                             <option value="<?php echo htmlspecialchars((string) $reportYearOption, ENT_QUOTES, 'UTF-8'); ?>" <?php echo (int) $reportYearOption === $reportsSelectedYear ? 'selected' : ''; ?>><?php echo htmlspecialchars((string) $reportYearOption, ENT_QUOTES, 'UTF-8'); ?></option>
                         <?php endforeach; ?>
                     </select>
+                    <label for="admin-reports-from">From:</label>
+                    <input id="admin-reports-from" type="date" name="reports_from" value="<?php echo htmlspecialchars($reportsDateFrom, ENT_QUOTES, 'UTF-8'); ?>">
+                    <label for="admin-reports-to">To:</label>
+                    <input id="admin-reports-to" type="date" name="reports_to" value="<?php echo htmlspecialchars($reportsDateTo, ENT_QUOTES, 'UTF-8'); ?>">
                     <button type="submit">Apply</button>
+                    <?php if ($reportsDateFrom !== '' || $reportsDateTo !== ''): ?>
+                        <a class="admin-reports-range-reset" href="<?php echo htmlspecialchars($adminHomePath . '?' . http_build_query(['admin_view' => 'reports', 'reports_year' => (string) $reportsSelectedYear]), ENT_QUOTES, 'UTF-8'); ?>">Reset dates</a>
+                    <?php endif; ?>
                 </form>
             </div>
+
+            <?php if ($reportsDateFrom !== '' || $reportsDateTo !== ''): ?>
+                <?php
+                    $reportsRangeLabelFrom = $reportsDateFrom !== '' ? DateTimeImmutable::createFromFormat('!Y-m-d', $reportsDateFrom)->format('d/m/Y') : 'the beginning';
+                    $reportsRangeLabelTo = $reportsDateTo !== '' ? DateTimeImmutable::createFromFormat('!Y-m-d', $reportsDateTo)->format('d/m/Y') : 'today';
+                ?>
+                <p class="admin-reports-range-note">
+                    Showing reservations placed from <?php echo htmlspecialchars($reportsRangeLabelFrom, ENT_QUOTES, 'UTF-8'); ?> to <?php echo htmlspecialchars($reportsRangeLabelTo, ENT_QUOTES, 'UTF-8'); ?>
+                    within <?php echo htmlspecialchars((string) $reportsSelectedYear, ENT_QUOTES, 'UTF-8'); ?>.
+                    <?php if ($reportsRangeCrossesYears): ?>Change the Year to see the rest of the range.<?php endif; ?>
+                </p>
+            <?php endif; ?>
 
             <div class="admin-reports-table-wrap" role="region" aria-label="Reports list">
                 <table class="admin-reports-table">
@@ -3783,7 +4652,12 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
                         </tr>
                     </thead>
                     <tbody>
-                        <?php foreach ($reportRows as $reportRow): ?>
+                        <?php if (!$reportDisplayRows): ?>
+                            <tr>
+                                <td colspan="3">No months in this date range for <?php echo htmlspecialchars((string) $reportsSelectedYear, ENT_QUOTES, 'UTF-8'); ?>.</td>
+                            </tr>
+                        <?php endif; ?>
+                        <?php foreach ($reportDisplayRows as $reportRow): ?>
                             <?php
                                 $reportRevenue = (float) ($reportRow['revenue'] ?? 0);
                                 $reportRevenueAbsolute = abs($reportRevenue);
@@ -3818,8 +4692,16 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
                 </label>
             </div>
 
+            <div class="admin-users-search-bar">
+                <label class="admin-users-search" for="admin-users-search">
+                    <span>Search users</span>
+                    <input id="admin-users-search" type="search" maxlength="150" placeholder="Name, ID, email or role" autocomplete="off" data-admin-users-search>
+                </label>
+                <p class="admin-users-search-summary" data-admin-users-search-summary role="status" aria-live="polite" aria-atomic="true"></p>
+            </div>
+
             <?php if ($adminUsersFlashMessage !== ''): ?>
-                <p class="admin-users-flash-message"><?php echo htmlspecialchars($adminUsersFlashMessage, ENT_QUOTES, 'UTF-8'); ?></p>
+                <p class="admin-users-flash-message<?php echo $adminUsersFlashType === 'error' ? ' is-error' : ''; ?>" role="<?php echo $adminUsersFlashType === 'error' ? 'alert' : 'status'; ?>"><?php echo htmlspecialchars($adminUsersFlashMessage, ENT_QUOTES, 'UTF-8'); ?></p>
             <?php endif; ?>
 
             <div class="admin-users-table-wrap" role="region" aria-label="Users list">
@@ -3827,18 +4709,41 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
                     <thead>
                         <tr>
                             <th scope="col">ID</th>
-                            <th scope="col">FULL NAME/EMPLOYEE NUMBER</th>
+                            <th scope="col">NAME</th>
+                            <th scope="col">EMPLOYEE NUMBER</th>
                             <th scope="col">EMAIL/USERNAME</th>
                             <th scope="col">ROLE</th>
+                            <th scope="col">ACTIONS</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php foreach ($dashboardUsers as $dashboardUser): ?>
                             <tr data-admin-user-row data-role="<?php echo strtolower((string) ($dashboardUser['role'] ?? '')); ?>">
                                 <td><?php echo htmlspecialchars((string) ($dashboardUser['prefixedId'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
-                                <td><?php echo htmlspecialchars((string) ($dashboardUser['name'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
+                                <td><?php echo htmlspecialchars(trim((string) ($dashboardUser['name'] ?? '')) !== '' ? (string) $dashboardUser['name'] : '-', ENT_QUOTES, 'UTF-8'); ?></td>
+                                <td><?php echo htmlspecialchars(trim((string) ($dashboardUser['employeeNumber'] ?? '')) !== '' ? (string) $dashboardUser['employeeNumber'] : '-', ENT_QUOTES, 'UTF-8'); ?></td>
                                 <td><?php echo htmlspecialchars((string) ($dashboardUser['email'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
                                 <td><?php echo htmlspecialchars((string) ($dashboardUser['role'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
+                                <td class="admin-users-actions-cell">
+                                    <?php $isOwnAdminAccount = ($dashboardUser['type'] ?? '') === 'admin' && (int) ($dashboardUser['id'] ?? 0) === (int) ($_SESSION['user_id'] ?? 0); ?>
+                                    <div class="admin-users-actions">
+                                        <button type="button" class="admin-users-action is-edit" data-admin-users-edit
+                                            data-user-type="<?php echo htmlspecialchars((string) ($dashboardUser['type'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
+                                            data-user-id="<?php echo (int) ($dashboardUser['id'] ?? 0); ?>"
+                                            data-user-name="<?php echo htmlspecialchars((string) ($dashboardUser['name'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
+                                            data-user-first-name="<?php echo htmlspecialchars((string) ($dashboardUser['firstName'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
+                                            data-user-last-name="<?php echo htmlspecialchars((string) ($dashboardUser['lastName'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
+                                            data-user-employee="<?php echo htmlspecialchars((string) ($dashboardUser['employeeNumber'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
+                                            data-user-login="<?php echo htmlspecialchars((string) ($dashboardUser['email'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
+                                            data-user-role="<?php echo htmlspecialchars((string) ($dashboardUser['role'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">Edit</button>
+                                        <button type="button" class="admin-users-action is-delete" data-admin-users-delete
+                                            data-user-type="<?php echo htmlspecialchars((string) ($dashboardUser['type'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
+                                            data-user-id="<?php echo (int) ($dashboardUser['id'] ?? 0); ?>"
+                                            data-user-label="<?php echo htmlspecialchars(trim((string) ($dashboardUser['name'] ?? '')) !== '' ? (string) $dashboardUser['name'] : (string) ($dashboardUser['email'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
+                                            data-user-role="<?php echo htmlspecialchars((string) ($dashboardUser['role'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
+                                            <?php echo $isOwnAdminAccount ? 'disabled title="You cannot delete the account you are logged in with."' : ''; ?>>Delete</button>
+                                    </div>
+                                </td>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>
@@ -4116,7 +5021,9 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
                                             $reservedReturn = trim((string) ($reservedItem['returnDate'] ?? '')) !== ''
                                                 ? trim((string) ($reservedItem['returnDate'] ?? '')) . (trim((string) ($reservedItem['returnTime'] ?? '')) !== '' ? ' | ' . trim((string) ($reservedItem['returnTime'] ?? '')) : '')
                                                 : 'Return schedule pending';
+                                            $reservedTrackUrl = $adminHomePath . '?admin_view=bookings&highlight_order=' . rawurlencode((string) ($reservedItem['orderNumber'] ?? ''));
                                         ?>
+                                        <a class="admin-dashboard-priority-link" href="<?php echo htmlspecialchars($reservedTrackUrl, ENT_QUOTES, 'UTF-8'); ?>" title="Open this reservation in Reservations &amp; Transaction History">
                                         <article class="admin-dashboard-priority-card">
                                             <div class="admin-dashboard-priority-top">
                                                 <div>
@@ -4137,6 +5044,7 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
                                                 <span><?php echo htmlspecialchars((string) ($reservedItem['amountLabel'] ?? admin_dashboard_format_currency(0)), ENT_QUOTES, 'UTF-8'); ?></span>
                                             </div>
                                         </article>
+                                        </a>
                                     <?php endforeach; ?>
                                 <?php else: ?>
                                     <p class="admin-dashboard-empty-state">There are no active reserved items right now.</p>
@@ -4152,6 +5060,9 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
                                     <p class="admin-dashboard-panel-eyebrow">Available Equipments</p>
                                     <h2 class="landing-title admin-dashboard-panel-title" id="admin-dashboard-available-title">Current usable inventory by gear</h2>
                                 </div>
+                                <div class="admin-dashboard-panel-aside">
+                                    <a class="admin-dashboard-panel-link" href="<?php echo htmlspecialchars($adminHomePath . '?admin_view=equipments', ENT_QUOTES, 'UTF-8'); ?>">Open Equipment Inventory</a>
+                                </div>
                             </div>
 
                             <div class="admin-dashboard-simple-list">
@@ -4162,7 +5073,11 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
                                                 <strong><?php echo htmlspecialchars((string) ($availableRow['displayName'] ?? 'Equipment'), ENT_QUOTES, 'UTF-8'); ?></strong>
                                                 <span><?php echo htmlspecialchars((string) ($availableRow['categoryLabel'] ?? 'Gear'), ENT_QUOTES, 'UTF-8'); ?></span>
                                             </div>
-                                            <span class="admin-dashboard-simple-pill"><?php echo htmlspecialchars((string) ($availableRow['availableUnits'] ?? 0), ENT_QUOTES, 'UTF-8'); ?>/<?php echo htmlspecialchars((string) ($availableRow['totalUnits'] ?? 0), ENT_QUOTES, 'UTF-8'); ?> available</span>
+                                            <?php if ((int) ($availableRow['availableUnits'] ?? 0) < 1): ?>
+                                                <span class="admin-dashboard-simple-pill" style="color:#ff9a8f;border-color:#ff9a8f;">NOT AVAILABLE</span>
+                                            <?php else: ?>
+                                                <span class="admin-dashboard-simple-pill"><?php echo htmlspecialchars((string) ($availableRow['availableUnits'] ?? 0), ENT_QUOTES, 'UTF-8'); ?>/<?php echo htmlspecialchars((string) ($availableRow['totalUnits'] ?? 0), ENT_QUOTES, 'UTF-8'); ?> available</span>
+                                            <?php endif; ?>
                                         </a>
                                     <?php endforeach; ?>
                                 <?php else: ?>
@@ -4173,34 +5088,7 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
                     </section>
                 </div>
 
-                <div class="admin-dashboard-row admin-dashboard-row--wide-right">
-                    <section class="admin-dashboard-card-cell" aria-labelledby="admin-dashboard-damaged-title">
-                        <div class="admin-dashboard-panel admin-dashboard-priority-panel">
-                            <div class="admin-dashboard-panel-head">
-                                <div>
-                                    <p class="admin-dashboard-panel-eyebrow">Damaged Equipments</p>
-                                    <h2 class="landing-title admin-dashboard-panel-title" id="admin-dashboard-damaged-title">Units currently marked for maintenance</h2>
-                                </div>
-                            </div>
-
-                            <div class="admin-dashboard-simple-list">
-                                <?php if ($dashboardDamagedEquipmentRows): ?>
-                                    <?php foreach ($dashboardDamagedEquipmentRows as $damagedRow): ?>
-                                        <a class="admin-dashboard-simple-row" href="<?php echo htmlspecialchars((string) ($damagedRow['productUrl'] ?? '#'), ENT_QUOTES, 'UTF-8'); ?>">
-                                            <div>
-                                                <strong><?php echo htmlspecialchars((string) ($damagedRow['displayName'] ?? 'Equipment'), ENT_QUOTES, 'UTF-8'); ?></strong>
-                                                <span><?php echo htmlspecialchars((string) ($damagedRow['unitId'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></span>
-                                            </div>
-                                            <span class="admin-dashboard-simple-pill is-warning"><?php echo htmlspecialchars((string) ($damagedRow['statusLabel'] ?? 'MAINTENANCE'), ENT_QUOTES, 'UTF-8'); ?></span>
-                                        </a>
-                                    <?php endforeach; ?>
-                                <?php else: ?>
-                                    <p class="admin-dashboard-empty-state">There are no damaged equipments.</p>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-                    </section>
-
+                <div class="admin-dashboard-row admin-dashboard-row--full">
                     <section class="admin-dashboard-card-cell" aria-labelledby="admin-dashboard-orders-title">
                         <div class="admin-dashboard-panel admin-dashboard-panel-orders">
                             <div class="admin-dashboard-panel-head">
@@ -4272,7 +5160,7 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
             </section>
 
             <section class="landing-section admin-dashboard-region admin-dashboard-region-activity" data-admin-dashboard-section="activity" data-admin-dashboard-section-label="Activity" data-admin-dashboard-section-default-visible="true">
-                <div class="admin-dashboard-row admin-dashboard-row--pair">
+                <div class="admin-dashboard-row admin-dashboard-row--full">
                     <section class="admin-dashboard-card-cell" aria-labelledby="admin-dashboard-most-used-gear-title">
                         <div class="admin-dashboard-panel admin-dashboard-priority-panel">
                             <div class="admin-dashboard-panel-head">
@@ -4299,7 +5187,9 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
                             </div>
                         </div>
                     </section>
+                </div>
 
+                <div class="admin-dashboard-row admin-dashboard-row--full">
                     <section class="admin-dashboard-card-cell" aria-labelledby="admin-dashboard-booked-services-title">
                         <div class="admin-dashboard-panel admin-dashboard-priority-panel">
                             <div class="admin-dashboard-panel-head">
@@ -4332,6 +5222,35 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
                                     <?php endforeach; ?>
                                 <?php else: ?>
                                     <p class="admin-dashboard-empty-state">There are no booked services yet.</p>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+
+                <div class="admin-dashboard-row admin-dashboard-row--full">
+                    <section class="admin-dashboard-card-cell" aria-labelledby="admin-dashboard-damaged-title">
+                        <div class="admin-dashboard-panel admin-dashboard-priority-panel">
+                            <div class="admin-dashboard-panel-head">
+                                <div>
+                                    <p class="admin-dashboard-panel-eyebrow">Damaged Equipments</p>
+                                    <h2 class="landing-title admin-dashboard-panel-title" id="admin-dashboard-damaged-title">Units currently marked for maintenance</h2>
+                                </div>
+                            </div>
+
+                            <div class="admin-dashboard-simple-list">
+                                <?php if ($dashboardDamagedEquipmentRows): ?>
+                                    <?php foreach ($dashboardDamagedEquipmentRows as $damagedRow): ?>
+                                        <a class="admin-dashboard-simple-row" href="<?php echo htmlspecialchars((string) ($damagedRow['productUrl'] ?? '#'), ENT_QUOTES, 'UTF-8'); ?>">
+                                            <div>
+                                                <strong><?php echo htmlspecialchars((string) ($damagedRow['displayName'] ?? 'Equipment'), ENT_QUOTES, 'UTF-8'); ?></strong>
+                                                <span><?php echo htmlspecialchars((string) ($damagedRow['unitId'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></span>
+                                            </div>
+                                            <span class="admin-dashboard-simple-pill is-warning"><?php echo htmlspecialchars((string) ($damagedRow['statusLabel'] ?? 'MAINTENANCE'), ENT_QUOTES, 'UTF-8'); ?></span>
+                                        </a>
+                                    <?php endforeach; ?>
+                                <?php else: ?>
+                                    <p class="admin-dashboard-empty-state">There are no damaged equipments.</p>
                                 <?php endif; ?>
                             </div>
                         </div>
@@ -4634,6 +5553,490 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
     </div>
     <?php endif; ?>
 
+    <?php if (!$isStaffSession): ?>
+    <?php
+        $addCameraBrandOptions = load_product_brands_repository();
+        $addCameraCategoryOptions = load_product_categories_repository();
+    ?>
+    <style>
+        .admin-equipments-head-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+        .admin-equipments-addcam-open { background: #2f6b1e; border: 1px solid #4c8f35; color: #fff; border-radius: 999px; padding: 0.55rem 1.1rem; font-weight: 700; font-size: 0.9rem; cursor: pointer; font-family: inherit; }
+        .admin-equipments-addcam-open:hover { background: #3a7f26; }
+        .admin-addcam-backdrop { position: fixed; inset: 0; z-index: 2000; display: flex; padding: 16px; background: rgba(0, 0, 0, 0.72); overflow-y: auto; }
+        .admin-addcam-backdrop[hidden] { display: none; }
+        .admin-addcam-modal { margin: auto; width: min(480px, 100%); background: #121315; color: #f4f4f4; border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 18px; padding: 22px; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55); }
+        .admin-addcam-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+        .admin-addcam-head h2 { margin: 0; font-size: 1.25rem; }
+        .admin-addcam-close { background: transparent; border: 0; color: #f4f4f4; font-size: 1.6rem; line-height: 1; cursor: pointer; }
+        .admin-addcam-copy { margin: 0 0 14px; color: rgba(244, 244, 244, 0.7); font-size: 0.88rem; }
+        .admin-addcam-field { display: block; margin-bottom: 12px; }
+        .admin-addcam-field > span { display: block; font-weight: 600; font-size: 0.85rem; margin-bottom: 6px; }
+        .admin-addcam-field input, .admin-addcam-field select { width: 100%; box-sizing: border-box; background: #1b1c1f; color: #fff; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 10px; padding: 0.65rem 0.8rem; font: inherit; }
+        .admin-addcam-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .admin-addcam-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+        .admin-addcam-cancel, .admin-addcam-submit { border-radius: 999px; padding: 0.6rem 1.2rem; font-weight: 700; cursor: pointer; font-family: inherit; }
+        .admin-addcam-cancel { background: transparent; color: #f4f4f4; border: 1px solid rgba(255, 255, 255, 0.3); }
+        .admin-addcam-submit { background: #2f6b1e; color: #fff; border: 1px solid #4c8f35; }
+        .admin-addcam-submit:hover { background: #3a7f26; }
+        .admin-addcam-image { margin-bottom: 12px; }
+        .admin-addcam-image-label { display: block; font-weight: 600; font-size: 0.85rem; margin-bottom: 6px; }
+        .admin-addcam-image-box { position: relative; border: 1px dashed rgba(255, 255, 255, 0.28); border-radius: 10px; padding: 12px; background: #17181b; }
+        .admin-addcam-image-preview { display: flex; align-items: center; justify-content: center; margin-bottom: 10px; background: #0d0e10; border-radius: 8px; padding: 8px; }
+        .admin-addcam-image-preview[hidden] { display: none; }
+        .admin-addcam-image-preview img { display: block; max-width: 100%; max-height: 150px; object-fit: contain; }
+        .admin-addcam-image-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+        .admin-addcam-image-btn { background: #2f6b1e; color: #fff; border: 1px solid #4c8f35; border-radius: 999px; padding: 0.55rem 1.1rem; font-weight: 700; font-size: 0.85rem; letter-spacing: 0.02em; cursor: pointer; font-family: inherit; white-space: nowrap; }
+        .admin-addcam-image-btn:hover { background: #3a7f26; }
+        .admin-addcam-image-name { flex: 1 1 140px; min-width: 0; font-size: 0.82rem; color: rgba(244, 244, 244, 0.65); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .admin-addcam-image-input { position: absolute; left: 12px; bottom: 12px; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+        .admin-equipment-actions-group { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; }
+        .admin-equipment-edit-btn { background: #26282c; color: #fff; border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 8px; padding: 0.5rem 0.95rem; font-weight: 700; font-size: 0.85rem; font-family: inherit; cursor: pointer; white-space: nowrap; }
+        .admin-equipment-edit-btn:hover { background: #34373c; }
+        .admin-addcam-skills { border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 10px; padding: 8px 12px 10px; margin: 0 0 12px; display: flex; flex-wrap: wrap; gap: 6px 18px; }
+        .admin-addcam-skills legend { font-weight: 600; font-size: 0.85rem; padding: 0 6px; }
+        .admin-addcam-skill { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+        .admin-addcam-skill input { width: 18px; height: 18px; accent-color: #4c8f35; }
+        .admin-equipment-bulk-remove { display: flex !important; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 10px 12px; box-sizing: border-box; width: 100%; margin: 0; padding: 16px 16px 14px; border-top: 1px solid rgba(255, 255, 255, 0.12); text-align: left; }
+        .admin-equipment-bulk-remove label { margin: 0; font-weight: 600; font-size: 0.9rem; white-space: nowrap; color: #f4f4f4; }
+        .admin-equipment-bulk-remove input[type="number"] { width: 90px !important; height: 40px !important; box-sizing: border-box; margin: 0; background: #1b1c1f; color: #fff; border: 1px solid rgba(255, 255, 255, 0.25); border-radius: 10px; padding: 0 0.7rem; font: inherit; }
+        .admin-equipment-bulk-remove .admin-equipment-bulk-remove-btn { display: inline-flex !important; align-items: center; justify-content: center; position: static !important; width: auto !important; height: 40px !important; min-width: 0; margin: 0; padding: 0 1.1rem !important; background: #9a3b3b; border: 1px solid #b85555; border-radius: 10px; color: #fff !important; font: inherit; font-weight: 700; font-size: 0.9rem; line-height: 1; white-space: nowrap; cursor: pointer; }
+        .admin-equipment-bulk-remove .admin-equipment-bulk-remove-btn:hover { background: #b04646; }
+        .admin-equipment-bulk-remove small { flex: 1 0 100%; margin: 0; text-align: left; color: rgba(244, 244, 244, 0.6); font-size: 0.8rem; }
+        @media (max-width: 480px) { .admin-addcam-row { grid-template-columns: 1fr; } }
+    </style>
+
+    <div class="admin-addcam-backdrop" data-admin-add-camera-backdrop hidden>
+        <section class="admin-addcam-modal" role="dialog" aria-modal="true" aria-labelledby="admin-addcam-title">
+            <div class="admin-addcam-head">
+                <h2 id="admin-addcam-title">Add Camera</h2>
+                <button class="admin-addcam-close" type="button" data-admin-add-camera-close aria-label="Close add camera form">&times;</button>
+            </div>
+            <p class="admin-addcam-copy">Create a new camera model. Pick an existing brand or type a new one.</p>
+
+            <form method="post" action="" autocomplete="off" enctype="multipart/form-data">
+                <input type="hidden" name="admin_action" value="equipment_add_model">
+
+                <label class="admin-addcam-field">
+                    <span>Brand</span>
+                    <input type="text" name="brand" list="admin-addcam-brand-list" maxlength="40" placeholder="ex. Sony" required data-admin-add-camera-first>
+                    <datalist id="admin-addcam-brand-list">
+                        <?php foreach ($addCameraBrandOptions as $addCameraBrandOption): ?>
+                            <option value="<?php echo htmlspecialchars((string) $addCameraBrandOption, ENT_QUOTES, 'UTF-8'); ?>"></option>
+                        <?php endforeach; ?>
+                    </datalist>
+                </label>
+
+                <label class="admin-addcam-field">
+                    <span>Model name</span>
+                    <input type="text" name="model_name" maxlength="60" placeholder="ex. A7 III" required>
+                </label>
+
+                <div class="admin-addcam-image">
+                    <span class="admin-addcam-image-label">Camera image</span>
+                    <div class="admin-addcam-image-box">
+                        <div class="admin-addcam-image-preview" data-admin-add-camera-preview hidden>
+                            <img src="" alt="Selected camera image preview" data-admin-add-camera-preview-img>
+                        </div>
+                        <div class="admin-addcam-image-row">
+                            <button class="admin-addcam-image-btn" type="button" data-admin-add-camera-image-pick>ADD CAMERA IMAGE</button>
+                            <span class="admin-addcam-image-name" data-admin-add-camera-image-name>No image selected</span>
+                        </div>
+                        <input class="admin-addcam-image-input" type="file" name="camera_image" accept="image/png,image/jpeg,image/webp" required data-admin-add-camera-image>
+                    </div>
+                </div>
+
+                <div class="admin-addcam-row">
+                    <label class="admin-addcam-field">
+                        <span>Category</span>
+                        <select name="category">
+                            <?php foreach ($addCameraCategoryOptions as $addCameraCategoryOption): ?>
+                                <option value="<?php echo htmlspecialchars((string) $addCameraCategoryOption, ENT_QUOTES, 'UTF-8'); ?>"><?php echo htmlspecialchars((string) $addCameraCategoryOption, ENT_QUOTES, 'UTF-8'); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </label>
+
+                    <label class="admin-addcam-field">
+                        <span>Initial quantity</span>
+                        <input type="number" name="quantity" min="1" max="200" step="1" value="1" required>
+                    </label>
+                </div>
+
+                <fieldset class="admin-addcam-skills">
+                    <legend>Skill level</legend>
+                    <?php foreach (product_skill_level_options() as $addCameraSkillOption): ?>
+                        <label class="admin-addcam-skill">
+                            <input type="checkbox" name="skill_levels[]" value="<?php echo htmlspecialchars((string) $addCameraSkillOption, ENT_QUOTES, 'UTF-8'); ?>" data-admin-add-camera-skill<?php echo (string) $addCameraSkillOption === default_product_skill_level() ? ' checked' : ''; ?>>
+                            <span><?php echo htmlspecialchars((string) $addCameraSkillOption, ENT_QUOTES, 'UTF-8'); ?></span>
+                        </label>
+                    <?php endforeach; ?>
+                </fieldset>
+
+                <label class="admin-addcam-field">
+                    <span>Rental price (P per day)</span>
+                    <input type="number" name="price" min="0" step="0.01" value="0.00" required>
+                </label>
+
+                <div class="admin-addcam-actions">
+                    <button class="admin-addcam-cancel" type="button" data-admin-add-camera-close>Cancel</button>
+                    <button class="admin-addcam-submit" type="submit">Add Camera</button>
+                </div>
+            </form>
+        </section>
+    </div>
+
+    <div class="admin-addcam-backdrop" data-admin-edit-camera-backdrop hidden>
+        <section class="admin-addcam-modal" role="dialog" aria-modal="true" aria-labelledby="admin-editcam-title">
+            <div class="admin-addcam-head">
+                <h2 id="admin-editcam-title">Edit Camera</h2>
+                <button class="admin-addcam-close" type="button" data-admin-edit-camera-close aria-label="Close edit camera form">&times;</button>
+            </div>
+            <p class="admin-addcam-copy" data-admin-edit-camera-subtitle>Update this camera's details.</p>
+
+            <form method="post" action="" autocomplete="off" enctype="multipart/form-data">
+                <input type="hidden" name="admin_action" value="equipment_edit_model">
+                <input type="hidden" name="product_key" value="" data-admin-edit-camera-key>
+
+                <label class="admin-addcam-field">
+                    <span>Brand</span>
+                    <input type="text" name="brand" list="admin-addcam-brand-list" maxlength="40" required>
+                </label>
+
+                <label class="admin-addcam-field">
+                    <span>Model name</span>
+                    <input type="text" name="model_name" maxlength="60" required data-admin-edit-camera-first>
+                </label>
+
+                <div class="admin-addcam-image">
+                    <span class="admin-addcam-image-label">Camera image</span>
+                    <div class="admin-addcam-image-box">
+                        <div class="admin-addcam-image-preview" data-admin-edit-camera-preview hidden>
+                            <img src="" alt="Camera image preview" data-admin-edit-camera-preview-img>
+                        </div>
+                        <div class="admin-addcam-image-row">
+                            <button class="admin-addcam-image-btn" type="button" data-admin-edit-camera-image-pick>CHANGE CAMERA IMAGE</button>
+                            <span class="admin-addcam-image-name" data-admin-edit-camera-image-name>Current image</span>
+                        </div>
+                        <input class="admin-addcam-image-input" type="file" name="camera_image" accept="image/png,image/jpeg,image/webp" data-admin-edit-camera-image>
+                    </div>
+                </div>
+
+                <div class="admin-addcam-row">
+                    <label class="admin-addcam-field">
+                        <span>Category</span>
+                        <select name="category">
+                            <?php foreach ($addCameraCategoryOptions as $editCameraCategoryOption): ?>
+                                <option value="<?php echo htmlspecialchars((string) $editCameraCategoryOption, ENT_QUOTES, 'UTF-8'); ?>"><?php echo htmlspecialchars((string) $editCameraCategoryOption, ENT_QUOTES, 'UTF-8'); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </label>
+
+                    <label class="admin-addcam-field">
+                        <span>Discount (%)</span>
+                        <input type="number" name="discount_percent" min="0" max="100" step="0.01" value="0">
+                    </label>
+                </div>
+
+                <fieldset class="admin-addcam-skills">
+                    <legend>Skill level</legend>
+                    <?php foreach (product_skill_level_options() as $editCameraSkillOption): ?>
+                        <label class="admin-addcam-skill">
+                            <input type="checkbox" name="skill_levels[]" value="<?php echo htmlspecialchars((string) $editCameraSkillOption, ENT_QUOTES, 'UTF-8'); ?>" data-admin-edit-camera-skill>
+                            <span><?php echo htmlspecialchars((string) $editCameraSkillOption, ENT_QUOTES, 'UTF-8'); ?></span>
+                        </label>
+                    <?php endforeach; ?>
+                </fieldset>
+
+                <label class="admin-addcam-field">
+                    <span>Rental price (P per day)</span>
+                    <input type="number" name="price" min="0" step="0.01" value="0.00" required>
+                </label>
+
+                <label class="admin-addcam-field">
+                    <span>Tagline</span>
+                    <input type="text" name="tagline" maxlength="200">
+                </label>
+
+                <label class="admin-addcam-field">
+                    <span>Specification 1</span>
+                    <input type="text" name="spec1" maxlength="120">
+                </label>
+
+                <label class="admin-addcam-field">
+                    <span>Specification 2</span>
+                    <input type="text" name="spec2" maxlength="120">
+                </label>
+
+                <div class="admin-addcam-actions">
+                    <button class="admin-addcam-cancel" type="button" data-admin-edit-camera-close>Cancel</button>
+                    <button class="admin-addcam-submit" type="submit">Save Changes</button>
+                </div>
+            </form>
+        </section>
+    </div>
+
+    <script>
+        (function () {
+            var backdrop = document.querySelector('[data-admin-add-camera-backdrop]');
+            if (!backdrop) { return; }
+
+            var openButtons = document.querySelectorAll('[data-admin-add-camera-open]');
+            var closeButtons = backdrop.querySelectorAll('[data-admin-add-camera-close]');
+            var firstField = backdrop.querySelector('[data-admin-add-camera-first]');
+
+            function openModal() {
+                backdrop.hidden = false;
+                if (firstField) { firstField.focus(); }
+            }
+
+            function closeModal() {
+                backdrop.hidden = true;
+            }
+
+            Array.prototype.forEach.call(openButtons, function (button) {
+                button.addEventListener('click', openModal);
+            });
+
+            Array.prototype.forEach.call(closeButtons, function (button) {
+                button.addEventListener('click', closeModal);
+            });
+
+            backdrop.addEventListener('click', function (event) {
+                if (event.target === backdrop) { closeModal(); }
+            });
+
+            document.addEventListener('keydown', function (event) {
+                if (event.key === 'Escape' && !backdrop.hidden) { closeModal(); }
+            });
+        })();
+
+        (function () {
+            var skillBoxes = document.querySelectorAll('[data-admin-add-camera-skill]');
+
+            function syncSkillValidity() {
+                var anyChecked = false;
+                Array.prototype.forEach.call(skillBoxes, function (box) { if (box.checked) { anyChecked = true; } });
+                if (skillBoxes.length) {
+                    skillBoxes[0].setCustomValidity(anyChecked ? '' : 'Select at least one skill level.');
+                }
+            }
+
+            Array.prototype.forEach.call(skillBoxes, function (box) {
+                box.addEventListener('change', syncSkillValidity);
+            });
+            syncSkillValidity();
+
+            var imageInput = document.querySelector('[data-admin-add-camera-image]');
+            var imagePick = document.querySelector('[data-admin-add-camera-image-pick]');
+            var imageName = document.querySelector('[data-admin-add-camera-image-name]');
+            var imagePreview = document.querySelector('[data-admin-add-camera-preview]');
+            var imagePreviewImg = document.querySelector('[data-admin-add-camera-preview-img]');
+            var imageObjectUrl = '';
+
+            function resetImagePreview() {
+                if (imageObjectUrl) { URL.revokeObjectURL(imageObjectUrl); imageObjectUrl = ''; }
+                if (imagePreviewImg) { imagePreviewImg.removeAttribute('src'); }
+                if (imagePreview) { imagePreview.hidden = true; }
+                if (imageName) { imageName.textContent = 'No image selected'; }
+            }
+
+            if (imageInput && imagePick) {
+                imagePick.addEventListener('click', function () { imageInput.click(); });
+
+                imageInput.addEventListener('change', function () {
+                    var file = imageInput.files && imageInput.files[0];
+
+                    if (!file) { resetImagePreview(); return; }
+
+                    if (!/^image\/(png|jpeg|webp)$/.test(file.type)) {
+                        window.alert('Please choose a PNG, JPG, or WEBP image.');
+                        imageInput.value = '';
+                        resetImagePreview();
+                        return;
+                    }
+
+                    if (file.size > 5 * 1024 * 1024) {
+                        window.alert('Image must be 5 MB or smaller.');
+                        imageInput.value = '';
+                        resetImagePreview();
+                        return;
+                    }
+
+                    if (imageObjectUrl) { URL.revokeObjectURL(imageObjectUrl); }
+                    imageObjectUrl = URL.createObjectURL(file);
+                    if (imagePreviewImg) { imagePreviewImg.src = imageObjectUrl; }
+                    if (imagePreview) { imagePreview.hidden = false; }
+                    if (imageName) { imageName.textContent = file.name; }
+                });
+            }
+
+            document.addEventListener('submit', function (event) {
+                var form = event.target;
+                if (!form || !form.hasAttribute || !form.hasAttribute('data-admin-bulk-remove')) { return; }
+
+                var input = form.querySelector('input[name="remove_count"]');
+                var total = parseInt(form.getAttribute('data-total'), 10) || 0;
+                var count = parseInt(input ? input.value : '0', 10) || 0;
+                var model = form.getAttribute('data-model') || 'this model';
+
+                if (count < 1 || count > total) {
+                    event.preventDefault();
+                    window.alert('Enter a quantity from 1 to ' + total + '.');
+                    return;
+                }
+
+                var message = count >= total
+                    ? 'Remove all ' + total + ' unit(s) of ' + model + '? The model will be archived.'
+                    : 'Remove ' + count + ' of ' + total + ' unit(s) from ' + model + '?';
+
+                if (!window.confirm(message)) {
+                    event.preventDefault();
+                }
+            });
+        })();
+
+        (function () {
+            var backdrop = document.querySelector('[data-admin-edit-camera-backdrop]');
+            if (!backdrop) { return; }
+
+            var form = backdrop.querySelector('form');
+            var subtitle = backdrop.querySelector('[data-admin-edit-camera-subtitle]');
+            var keyField = backdrop.querySelector('[data-admin-edit-camera-key]');
+            var firstField = backdrop.querySelector('[data-admin-edit-camera-first]');
+            var skillBoxes = backdrop.querySelectorAll('[data-admin-edit-camera-skill]');
+            var imageInput = backdrop.querySelector('[data-admin-edit-camera-image]');
+            var imagePick = backdrop.querySelector('[data-admin-edit-camera-image-pick]');
+            var imageName = backdrop.querySelector('[data-admin-edit-camera-image-name]');
+            var imagePreview = backdrop.querySelector('[data-admin-edit-camera-preview]');
+            var imagePreviewImg = backdrop.querySelector('[data-admin-edit-camera-preview-img]');
+            var currentImageSrc = '';
+            var imageObjectUrl = '';
+
+            function revokeObjectUrl() {
+                if (imageObjectUrl) { URL.revokeObjectURL(imageObjectUrl); imageObjectUrl = ''; }
+            }
+
+            function showPreview(src) {
+                if (src) {
+                    imagePreviewImg.src = src;
+                    imagePreview.hidden = false;
+                } else {
+                    imagePreviewImg.removeAttribute('src');
+                    imagePreview.hidden = true;
+                }
+            }
+
+            function showCurrentImage() {
+                revokeObjectUrl();
+                showPreview(currentImageSrc);
+                imageName.textContent = currentImageSrc ? 'Current image (pick a file to replace it)' : 'No image yet';
+            }
+
+            function syncSkillValidity() {
+                var anyChecked = false;
+                Array.prototype.forEach.call(skillBoxes, function (box) { if (box.checked) { anyChecked = true; } });
+                if (skillBoxes.length) {
+                    skillBoxes[0].setCustomValidity(anyChecked ? '' : 'Select at least one skill level.');
+                }
+            }
+
+            function setSelectValue(select, value) {
+                var found = false;
+                Array.prototype.forEach.call(select.options, function (option) {
+                    if (option.value === value) { found = true; }
+                });
+                if (!found && value) {
+                    var extra = document.createElement('option');
+                    extra.value = value;
+                    extra.textContent = value;
+                    select.appendChild(extra);
+                }
+                select.value = value;
+            }
+
+            function openModal(button) {
+                var data = button.dataset;
+                var skills = (data.skills || '').split('|');
+
+                keyField.value = data.productKey || '';
+                form.elements['brand'].value = data.brand || '';
+                form.elements['model_name'].value = data.name || '';
+                setSelectValue(form.elements['category'], data.category || '');
+                form.elements['discount_percent'].value = data.discount || '0';
+                form.elements['price'].value = data.price || '0.00';
+                form.elements['tagline'].value = data.tagline || '';
+                form.elements['spec1'].value = data.spec1 || '';
+                form.elements['spec2'].value = data.spec2 || '';
+
+                Array.prototype.forEach.call(skillBoxes, function (box) {
+                    box.checked = skills.indexOf(box.value) !== -1;
+                });
+                syncSkillValidity();
+
+                imageInput.value = '';
+                currentImageSrc = data.image || '';
+                showCurrentImage();
+
+                subtitle.textContent = 'Editing ' + (data.modelLabel || 'camera') + '. Unit IDs and bookings stay linked to this camera.';
+                backdrop.hidden = false;
+                if (firstField) { firstField.focus(); }
+            }
+
+            function closeModal() {
+                backdrop.hidden = true;
+                revokeObjectUrl();
+            }
+
+            document.addEventListener('click', function (event) {
+                var openButton = event.target.closest ? event.target.closest('[data-admin-edit-camera-open]') : null;
+                if (openButton) { openModal(openButton); }
+            });
+
+            Array.prototype.forEach.call(backdrop.querySelectorAll('[data-admin-edit-camera-close]'), function (button) {
+                button.addEventListener('click', closeModal);
+            });
+
+            backdrop.addEventListener('click', function (event) {
+                if (event.target === backdrop) { closeModal(); }
+            });
+
+            document.addEventListener('keydown', function (event) {
+                if (event.key === 'Escape' && !backdrop.hidden) { closeModal(); }
+            });
+
+            Array.prototype.forEach.call(skillBoxes, function (box) {
+                box.addEventListener('change', syncSkillValidity);
+            });
+
+            imagePick.addEventListener('click', function () { imageInput.click(); });
+
+            imageInput.addEventListener('change', function () {
+                var file = imageInput.files && imageInput.files[0];
+
+                if (!file) { showCurrentImage(); return; }
+
+                if (!/^image\/(png|jpeg|webp)$/.test(file.type)) {
+                    window.alert('Please choose a PNG, JPG, or WEBP image.');
+                    imageInput.value = '';
+                    showCurrentImage();
+                    return;
+                }
+
+                if (file.size > 5 * 1024 * 1024) {
+                    window.alert('Image must be 5 MB or smaller.');
+                    imageInput.value = '';
+                    showCurrentImage();
+                    return;
+                }
+
+                revokeObjectUrl();
+                imageObjectUrl = URL.createObjectURL(file);
+                showPreview(imageObjectUrl);
+                imageName.textContent = file.name;
+            });
+        })();
+    </script>
+    <?php endif; ?>
+
     <div class="admin-action-modal-backdrop" data-admin-action-modal-backdrop hidden>
         <section class="admin-action-modal" role="dialog" aria-modal="true" aria-labelledby="admin-action-modal-title">
             <div class="admin-action-modal-head">
@@ -4656,6 +6059,74 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
     </div>
 
     <?php if (!$isStaffSession): ?>
+    <div class="admin-users-create-backdrop" data-admin-user-edit-backdrop hidden>
+        <section class="admin-users-create-modal admin-users-edit-modal" role="dialog" aria-modal="true" aria-labelledby="admin-user-edit-title">
+            <div class="admin-users-create-head">
+                <h2 id="admin-user-edit-title" data-admin-user-edit-title>Edit Account</h2>
+                <button class="admin-users-create-close" type="button" data-admin-user-edit-close aria-label="Close edit form">&times;</button>
+            </div>
+
+            <form class="admin-users-create-form" method="post" action="" data-admin-user-edit-form>
+                <input type="hidden" name="admin_action" value="admin_update_user">
+                <input type="hidden" name="user_action_token" value="<?php echo htmlspecialchars($adminUsersActionToken, ENT_QUOTES, 'UTF-8'); ?>">
+                <input type="hidden" name="user_type" value="" data-admin-user-edit-type>
+                <input type="hidden" name="user_id" value="" data-admin-user-edit-id>
+
+                <p class="admin-users-edit-login"><strong data-admin-user-edit-login-label>Email</strong>: <span data-admin-user-edit-login></span> <em>(cannot be changed)</em></p>
+
+                <div class="admin-users-edit-group" data-admin-user-edit-group="customer" hidden>
+                    <label for="admin-user-edit-first-name">First Name</label>
+                    <input id="admin-user-edit-first-name" name="edit_first_name" type="text" maxlength="100" data-required-when-active autocomplete="off" disabled>
+
+                    <label for="admin-user-edit-last-name">Last Name</label>
+                    <input id="admin-user-edit-last-name" name="edit_last_name" type="text" maxlength="100" data-required-when-active autocomplete="off" disabled>
+                </div>
+
+                <div class="admin-users-edit-group" data-admin-user-edit-group="employee" hidden>
+                    <label for="admin-user-edit-name">Name</label>
+                    <input id="admin-user-edit-name" name="edit_name" type="text" maxlength="190" data-required-when-active autocomplete="off" disabled>
+
+                    <label for="admin-user-edit-employee-number">Employee Number</label>
+                    <input id="admin-user-edit-employee-number" name="edit_employee_number" type="text" maxlength="50" data-required-when-active autocomplete="off" disabled>
+                </div>
+
+                <label for="admin-user-edit-new-password">New Password <span class="admin-users-edit-hint">(leave blank to keep the current password)</span></label>
+                <input id="admin-user-edit-new-password" name="edit_new_password" type="password" autocomplete="new-password">
+
+                <label for="admin-user-edit-confirm-password">Confirm New Password</label>
+                <input id="admin-user-edit-confirm-password" name="edit_confirm_password" type="password" autocomplete="new-password">
+
+                <div class="admin-users-create-actions">
+                    <button class="admin-users-create-cancel" type="button" data-admin-user-edit-close>Cancel</button>
+                    <button class="admin-users-create-submit" type="submit">Save Changes</button>
+                </div>
+            </form>
+        </section>
+    </div>
+
+    <div class="admin-users-create-backdrop" data-admin-user-delete-backdrop hidden>
+        <section class="admin-users-create-modal admin-users-delete-modal" role="alertdialog" aria-modal="true" aria-labelledby="admin-user-delete-title">
+            <div class="admin-users-create-head">
+                <h2 id="admin-user-delete-title">Delete Account</h2>
+                <button class="admin-users-create-close" type="button" data-admin-user-delete-cancel aria-label="Close delete dialog">&times;</button>
+            </div>
+
+            <form class="admin-users-create-form" method="post" action="" data-admin-user-delete-form>
+                <input type="hidden" name="admin_action" value="admin_delete_user">
+                <input type="hidden" name="user_action_token" value="<?php echo htmlspecialchars($adminUsersActionToken, ENT_QUOTES, 'UTF-8'); ?>">
+                <input type="hidden" name="user_type" value="" data-admin-user-delete-type>
+                <input type="hidden" name="user_id" value="" data-admin-user-delete-id>
+
+                <p class="admin-users-delete-copy" data-admin-user-delete-copy></p>
+
+                <div class="admin-users-create-actions">
+                    <button class="admin-users-create-cancel" type="button" data-admin-user-delete-cancel>Cancel</button>
+                    <button class="admin-users-create-submit admin-users-delete-submit" type="submit">Delete</button>
+                </div>
+            </form>
+        </section>
+    </div>
+
     <div class="admin-users-create-backdrop" data-admin-users-create-backdrop hidden>
         <section class="admin-users-create-modal" role="dialog" aria-modal="true" aria-labelledby="admin-users-create-title">
             <div class="admin-users-create-head">
@@ -4690,8 +6161,13 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
                     </label>
                 </fieldset>
 
-                <label for="admin-create-user-full-name" id="full-name-label"><?php echo $adminCreateUserValues['role'] === 'admin' ? 'Employee Number' : ($adminCreateUserValues['role'] === 'staff' ? 'Name' : 'Full Name'); ?></label>
-                <input id="admin-create-user-full-name" name="full_name" type="text" value="<?php echo htmlspecialchars($adminCreateUserValues['full_name'], ENT_QUOTES, 'UTF-8'); ?>" required>
+                <label for="admin-create-user-full-name" id="full-name-label"><?php echo $adminCreateUserValues['role'] === 'customer' ? 'Full Name' : 'Name'; ?></label>
+                <input id="admin-create-user-full-name" name="full_name" type="text" maxlength="190" value="<?php echo htmlspecialchars($adminCreateUserValues['full_name'], ENT_QUOTES, 'UTF-8'); ?>" required>
+
+                <div class="admin-users-create-employee-field" id="admin-create-user-employee-field"<?php echo $adminCreateUserValues['role'] === 'customer' ? ' style="display:none;"' : ''; ?>>
+                    <label for="admin-create-user-employee-number">Employee Number</label>
+                    <input id="admin-create-user-employee-number" name="employee_number" type="text" maxlength="50" value="<?php echo htmlspecialchars($adminCreateUserValues['employee_number'], ENT_QUOTES, 'UTF-8'); ?>"<?php echo $adminCreateUserValues['role'] === 'customer' ? '' : ' required'; ?>>
+                </div>
 
                 <label for="admin-create-user-email" id="email-label"><?php echo $adminCreateUserValues['role'] === 'admin' ? 'Username' : 'Email'; ?></label>
                 <input id="admin-create-user-email" name="email" type="<?php echo $adminCreateUserValues['role'] === 'admin' ? 'text' : 'email'; ?>" value="<?php echo htmlspecialchars($adminCreateUserValues['email'], ENT_QUOTES, 'UTF-8'); ?>" required>
@@ -5004,6 +6480,8 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
             const selectedRole = Array.from(roleRadios).find(r => r.checked)?.value || 'customer';
 
             const fullNameLabel = document.getElementById('full-name-label');   
+            const employeeField = document.getElementById('admin-create-user-employee-field');
+            const employeeInput = document.getElementById('admin-create-user-employee-number');
             const emailLabel = document.getElementById('email-label');
             const emailInput = document.getElementById('admin-create-user-email');
             const statusFieldset = document.getElementById('admin-create-user-status-fieldset');
@@ -5013,8 +6491,14 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
                 return;
             }
 
+            if (employeeField && employeeInput) {
+                const needsEmployee = selectedRole === 'admin' || selectedRole === 'staff';
+                employeeField.style.display = needsEmployee ? '' : 'none';
+                employeeInput.required = needsEmployee;
+            }
+
             if (selectedRole === 'admin') {
-                fullNameLabel.textContent = 'Employee Number';
+                fullNameLabel.textContent = 'Name';
                 emailLabel.textContent = 'Username';
                 emailInput.type = 'text';
                 if (statusFieldset) statusFieldset.style.display = 'none';
@@ -5036,8 +6520,721 @@ $nextPromoBannerSlot = max(1, $lastPromoSlot + 1);
         document.addEventListener('DOMContentLoaded', updateFieldLabels);
     </script>
     <script src="<?php echo htmlspecialchars($assetBase, ENT_QUOTES, 'UTF-8'); ?>js/transaction-history.js?v=20260923-1"></script>
-    <script src="<?php echo htmlspecialchars($assetBase, ENT_QUOTES, 'UTF-8'); ?>js/script.js?v=20260923-1"></script>
+    <script src="<?php echo htmlspecialchars($assetBase, ENT_QUOTES, 'UTF-8'); ?>js/script.js?v=20261015-1"></script>
     <script src="<?php echo htmlspecialchars($assetBase, ENT_QUOTES, 'UTF-8'); ?>js/admin-equipment.js?v=20260923-1"></script>
+    <style>
+        .admin-dashboard-priority-link { display: block; color: inherit; text-decoration: none; }
+        .admin-dashboard-priority-link .admin-dashboard-priority-card { cursor: pointer; transition: border-color 0.15s ease, transform 0.15s ease; }
+        .admin-dashboard-priority-link:hover .admin-dashboard-priority-card,
+        .admin-dashboard-priority-link:focus-visible .admin-dashboard-priority-card { border-color: #f2e55c; transform: translateY(-1px); }
+        tr.admin-bookings-row.is-tracked > td { background: rgba(242, 229, 92, 0.18) !important; box-shadow: inset 0 2px 0 #f2e55c, inset 0 -2px 0 #f2e55c; }
+        tr.admin-bookings-row.is-tracked > td:first-child { box-shadow: inset 2px 2px 0 #f2e55c, inset 0 -2px 0 #f2e55c; }
+        tr.admin-bookings-row.is-tracked > td:last-child { box-shadow: inset -2px 2px 0 #f2e55c, inset 0 -2px 0 #f2e55c; }
+        tr.admin-bookings-row.is-tracked { animation: creatyTrackPulse 1s ease-in-out 3; }
+        .admin-bookings-cancel-reason { display: block; max-width: 100%; margin-top: 0.35rem; overflow: hidden; text-align: center; text-overflow: ellipsis; white-space: nowrap; font-size: 0.72rem; line-height: 1.3; opacity: 0.75; }
+        .admin-bookings-table td { --pill-w: 150px; overflow: visible; }
+        .admin-bookings-table td:last-child { padding-left: 2.4rem; padding-right: 2.4rem; }
+        .admin-bookings-table td .admin-bookings-status { width: var(--pill-w); }
+        .admin-bookings-status-wrap { position: relative; display: block; width: 100%; }
+        .admin-bookings-reason-toggle { position: absolute; top: 0; left: calc(50% + (var(--pill-w) / 2) + 6px); width: 24px; height: 24px; padding: 0; display: grid; place-items: center; border: 1px solid rgba(255, 255, 255, 0.35); border-radius: 999px; background: transparent; color: #f4f4f4; cursor: pointer; }
+        .admin-bookings-reason-toggle:hover { background: rgba(255, 255, 255, 0.12); }
+        .admin-bookings-reason-toggle:focus-visible { outline: 2px solid #f2e55c; outline-offset: 2px; }
+        .admin-bookings-reason-toggle::after { content: ''; width: 0.38rem; height: 0.38rem; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg) translate(-1px, -1px); transition: transform 0.15s ease; }
+        .admin-bookings-reason-toggle.is-open::after { transform: rotate(225deg) translate(-1px, -1px); }
+        .admin-bookings-cancel-reason[hidden] { display: none; }
+        .admin-bookings-cancel-reason { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+        .admin-reports-year-filter { flex-wrap: wrap; justify-content: flex-end; }
+        .admin-reports-year-filter input[type="date"] { min-height: 32px; border-radius: 8px; border: 1px solid rgba(217, 217, 217, 0.4); background: rgba(17, 18, 20, 0.85); color: #f4f4f4; color-scheme: dark; font-size: 0.84rem; font-weight: 600; padding: 0.3rem 0.5rem; }
+        .admin-reports-range-reset { color: #dde531; font-size: 0.82rem; font-weight: 700; text-decoration: none; }
+        .admin-reports-range-reset:hover, .admin-reports-range-reset:focus-visible { text-decoration: underline; }
+        .admin-reports-range-note { margin: 0.6rem 0 0.4rem; color: rgba(244, 244, 244, 0.75); font-size: 0.82rem; }
+        /* Reservation Details: one scrollable view instead of tabs */
+        .admin-booking-detail-pages-nav { display: none !important; }
+        .admin-booking-detail-modal .admin-booking-detail-page[hidden] { display: grid !important; }
+        .admin-booking-detail-modal .admin-booking-detail-page + .admin-booking-detail-page { margin-top: 1.1rem; padding-top: 1rem; border-top: 1px solid rgba(255, 255, 255, 0.14); }
+        .admin-booking-detail-subtitle { margin: 0; font-size: 0.95rem; letter-spacing: 0.05em; text-transform: uppercase; }
+        @keyframes creatyTrackPulse { 0%, 100% { filter: none; } 50% { filter: brightness(1.4); } }
+        /* Navbar: swap button removed, management pages live in the Manage dropdown */
+        .section-nav-admin .section-nav-swap { display: none !important; }
+        .section-nav-admin .admin-nav-alt { display: none !important; }
+        .topbar-manage-menu { margin-right: 0.5rem; }
+        .topbar-manage-menu .account-pill.is-panel-active { box-shadow: 0 0 0 2px #f2e55c; }
+        .topbar-manage-menu .dropdown-item.is-active { font-weight: 700; }
+        /* Dashboard layout: New Orders, Most Borrowed Gear, Booked Services, Damaged Equipments stacked full width */
+        .admin-dashboard-region-operations .admin-dashboard-order-list,
+        .admin-dashboard-region-activity .admin-dashboard-service-groups { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+        .admin-dashboard-region-activity .admin-dashboard-simple-list { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+        .admin-dashboard-region-activity .admin-dashboard-simple-list > .admin-dashboard-empty-state,
+        .admin-dashboard-region-activity .admin-dashboard-service-groups > .admin-dashboard-empty-state,
+        .admin-dashboard-region-operations .admin-dashboard-order-list > .admin-dashboard-empty-state { grid-column: 1 / -1; }
+        /* Dashboard cards: status badge pinned to the upper right corner */
+        .admin-dashboard-priority-card,
+        .admin-dashboard-order-card { position: relative; }
+        .admin-dashboard-priority-top > .admin-bookings-status,
+        .admin-dashboard-order-top > .admin-bookings-status { position: absolute; top: 0.75rem; right: 0.9rem; margin: 0; z-index: 1; }
+        .admin-dashboard-priority-top > div:first-child,
+        .admin-dashboard-order-top > div:first-child { padding-right: 7.5rem; }
+        /* Handover photo (proof of handover with the customer) */
+        .admin-handover-proof { margin: 1rem 0 0; padding: 0.9rem 1rem; border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 12px; background: rgba(255, 255, 255, 0.04); }
+        .admin-handover-proof[hidden], .admin-handover-proof [hidden], .admin-booking-detail-handover-wrap[hidden] { display: none !important; }
+        .admin-handover-proof-title { margin: 0 0 0.25rem; font-size: 0.85rem; letter-spacing: 0.06em; text-transform: uppercase; }
+        .admin-handover-proof-copy { margin: 0 0 0.7rem; font-size: 0.82rem; opacity: 0.85; }
+        .admin-handover-proof-copy.is-ready { color: #9be29b; opacity: 1; }
+        .admin-handover-proof-row { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: stretch; }
+        .admin-handover-proof-filename { flex: 1 1 180px; min-width: 0; padding: 0.6rem 0.8rem; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 10px; background: rgba(0, 0, 0, 0.25); font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .admin-handover-proof-btn { padding: 0.6rem 1.1rem; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.3); background: transparent; color: inherit; font: inherit; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; cursor: pointer; }
+        .admin-handover-proof-btn.is-select { border-color: #b88a4a; background: rgba(184, 138, 74, 0.2); }
+        .admin-handover-proof-btn.is-upload { border-color: #4a78b8; background: rgba(74, 120, 184, 0.25); }
+        .admin-handover-proof-btn:disabled { opacity: 0.5; cursor: wait; }
+        .admin-handover-proof-error { margin: 0.6rem 0 0; color: #ff9a8f; font-size: 0.82rem; }
+        .admin-handover-proof-preview { display: inline-block; margin-top: 0.7rem; }
+        .admin-handover-proof-preview img { display: block; max-width: 160px; max-height: 120px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.2); object-fit: cover; }
+        .admin-booking-detail-handover-wrap img { max-width: 100%; max-height: 360px; border-radius: 10px; object-fit: contain; }
+        .admin-booking-action[disabled][data-admin-handover-locked] { opacity: 0.45; cursor: not-allowed; }
+        /* Refund / reject / cancel reason dialog: keep every control inside the dialog border */
+        .admin-booking-review-modal .admin-booking-reason-label { display: block; margin: 0; color: #d8d8db; font-size: 0.84rem; font-weight: 600; letter-spacing: 0.03em; line-height: 1.4; }
+        .admin-booking-review-modal .admin-booking-reason-label span { color: rgba(216, 216, 219, 0.65); font-weight: 400; }
+        .admin-booking-review-modal .admin-booking-reason-custom { display: grid; gap: 0.45rem; }
+        .admin-booking-review-modal .admin-booking-reason-select:focus { outline: 2px solid rgba(236, 227, 169, 0.52); outline-offset: 1px; }
+        .admin-booking-review-backdrop .admin-booking-review-modal { box-sizing: border-box; width: min(560px, calc(100vw - 2rem)); max-width: 100%; max-height: calc(100vh - 2rem); overflow-x: hidden; overflow-y: auto; }
+        .admin-booking-review-modal *, .admin-booking-review-modal *::before, .admin-booking-review-modal *::after { box-sizing: border-box; min-width: 0; }
+        .admin-booking-review-modal > *, .admin-booking-review-modal select, .admin-booking-review-modal textarea, .admin-booking-review-modal input { max-width: 100%; }
+        .admin-booking-review-modal .admin-booking-reason-select,
+        .admin-booking-review-modal .admin-booking-review-textarea { display: block; width: 100%; padding: 0.65rem 0.8rem; border: 1px solid rgba(255, 255, 255, 0.22); border-radius: 10px; background: rgba(255, 255, 255, 0.06); color: inherit; font: inherit; }
+        .admin-booking-review-modal .admin-booking-reason-select option { background: #15171c; color: #fff; }
+        .admin-booking-review-modal .admin-booking-review-textarea { resize: vertical; }
+        .admin-booking-review-modal .admin-booking-review-customer-gcash,
+        .admin-booking-review-modal .admin-booking-review-proof-wrap { width: 100%; overflow-wrap: anywhere; }
+        .admin-booking-review-modal .admin-booking-review-proof-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.6rem; }
+        .admin-booking-review-modal .admin-booking-review-proof-filename { flex: 1 1 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .admin-booking-review-modal .admin-booking-review-proof-select { flex: 0 0 auto; max-width: 100%; }
+        .admin-booking-review-modal .admin-booking-review-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.6rem; }
+        .admin-booking-review-modal .admin-booking-review-copy,
+        .admin-booking-review-modal .admin-booking-review-proof-note,
+        .admin-booking-review-modal .admin-booking-review-error { overflow-wrap: anywhere; }
+        /* Users: search bar */
+        .admin-users-search-bar { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 0.6rem 1rem; margin: 0 0 0.8rem; }
+        .admin-users-search { display: grid; gap: 0.35rem; flex: 1 1 280px; max-width: 460px; }
+        .admin-users-search > span { color: rgba(244, 244, 244, 0.85); font-size: 0.8rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+        .admin-users-search input { width: 100%; min-height: 38px; padding: 0 1rem; border: 1px solid rgba(217, 217, 217, 0.28); border-radius: 999px; background: rgba(255, 255, 255, 0.06); color: #f4f4f4; font: inherit; font-size: 0.9rem; }
+        .admin-users-search input::placeholder { color: rgba(244, 244, 244, 0.5); }
+        .admin-users-search input:focus-visible { outline: 2px solid rgba(217, 217, 217, 0.64); outline-offset: 1px; }
+        .admin-users-search-summary { margin: 0; color: rgba(244, 244, 244, 0.7); font-size: 0.82rem; }
+        .admin-users-table tbody tr[data-search-hidden] { display: none !important; }
+        .admin-users-empty-cell { text-align: center; color: rgba(244, 244, 244, 0.7); padding: 1rem; }
+        /* Users: Edit / Delete buttons and dialogs */
+        .admin-users-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+        .admin-users-action { min-height: 30px; padding: 0 0.85rem; border: 1px solid rgba(255, 255, 255, 0.28); border-radius: 999px; background: rgba(255, 255, 255, 0.06); color: #f4f4f4; font: inherit; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; cursor: pointer; }
+        .admin-users-action.is-edit { border-color: rgba(143, 179, 245, 0.62); background: rgba(63, 96, 162, 0.28); color: #e6f0ff; }
+        .admin-users-action.is-delete { border-color: rgba(230, 120, 120, 0.6); background: rgba(150, 50, 50, 0.28); color: #ffdede; }
+        .admin-users-action:disabled { opacity: 0.4; cursor: not-allowed; }
+        .admin-users-actions-cell { white-space: nowrap; }
+        .admin-users-flash-message.is-error { border-color: rgba(230, 120, 120, 0.6); background: rgba(150, 50, 50, 0.3); color: #ffdede; }
+        .admin-users-edit-group { display: grid; gap: 0.7rem; }
+        .admin-users-edit-group[hidden] { display: none; }
+        .admin-users-edit-login { margin: 0; font-size: 0.86rem; }
+        .admin-users-edit-login em, .admin-users-edit-hint { font-weight: 400; font-size: 0.78rem; opacity: 0.7; }
+        .admin-users-create-modal { max-height: calc(100vh - 2rem); overflow-y: auto; }
+        .admin-users-edit-modal, .admin-users-delete-modal { width: min(100%, 520px); }
+        .admin-users-create-form input[type="text"], .admin-users-create-form input[type="email"], .admin-users-create-form input[type="password"] { max-width: 100%; box-sizing: border-box; }
+        .admin-users-delete-copy { margin: 0; font-size: 0.92rem; line-height: 1.5; }
+        .admin-users-create-submit.admin-users-delete-submit { background: #a63a3a; border-color: #7c2626; color: #fff; }
+    </style>
+    <script>
+        // Highlights the reservation opened from the dashboard "Reserved Items" cards.
+        (function () {
+            var params = new URLSearchParams(window.location.search);
+            var target = (params.get('highlight_order') || '').trim().toUpperCase();
+
+            if (target === '') {
+                return;
+            }
+
+            var active = true;
+            var scrolled = false;
+            var observer = null;
+
+            function findRow() {
+                var rows = document.querySelectorAll('tr[data-admin-booking-row]');
+
+                for (var i = 0; i < rows.length; i++) {
+                    var cell = rows[i].cells[1];
+
+                    if (cell && cell.textContent.trim().toUpperCase() === target) {
+                        return rows[i];
+                    }
+                }
+
+                return null;
+            }
+
+            function apply() {
+                if (!active) {
+                    return false;
+                }
+
+                var row = findRow();
+
+                if (!row) {
+                    return false;
+                }
+
+                document.querySelectorAll('tr.is-tracked').forEach(function (other) {
+                    if (other !== row) {
+                        other.classList.remove('is-tracked');
+                    }
+                });
+
+                row.classList.add('is-tracked');
+
+                if (!scrolled && row.offsetParent !== null) {
+                    scrolled = true;
+                    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+                    // Remove the highlight parameter so a refresh does not highlight again.
+                    params.delete('highlight_order');
+                    var query = params.toString();
+                    window.history.replaceState(null, '', window.location.pathname + (query ? '?' + query : '') + window.location.hash);
+
+                    // Clear the highlight on the next click anywhere on the page.
+                    window.setTimeout(function () {
+                        document.addEventListener('click', stop, { once: true });
+                    }, 1500);
+                }
+
+                return true;
+            }
+
+            function stop() {
+                active = false;
+
+                if (observer) {
+                    observer.disconnect();
+                }
+
+                document.querySelectorAll('tr.is-tracked').forEach(function (row) {
+                    row.classList.remove('is-tracked');
+                });
+            }
+
+            // The Reservations tab is shown and sorted by the page scripts, so retry for a few seconds.
+            var attempts = 0;
+            var timer = window.setInterval(function () {
+                attempts++;
+                apply();
+
+                if (scrolled || attempts > 40) {
+                    window.clearInterval(timer);
+                }
+            }, 150);
+
+            // Keep the highlight if live updates redraw the table rows.
+            var tableBody = document.querySelector('.admin-bookings-table tbody');
+
+            if (tableBody && 'MutationObserver' in window) {
+                observer = new MutationObserver(function () {
+                    apply();
+                });
+                observer.observe(tableBody, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden'] });
+            }
+        })();
+    </script>
+    <script>
+        // Navbar: keep DASHBOARD / SERVICES / PRODUCTS in the bar; EQUIPMENTS, RESERVATIONS, REPORTS and USERS live in the Manage dropdown.
+        (function () {
+            var nav = document.querySelector('[data-admin-nav]');
+            if (!nav) { return; }
+
+            var panel = (new URLSearchParams(window.location.search).get('admin_view') || '').toLowerCase();
+            var busy = false;
+
+            function enforce() {
+                if (busy) { return; }
+                busy = true;
+
+                nav.querySelectorAll('[data-admin-nav-item="primary"]').forEach(function (el) {
+                    if (el.hasAttribute('hidden')) { el.removeAttribute('hidden'); }
+                    if (el.style.display) { el.style.removeProperty('display'); }
+                    if (window.getComputedStyle(el).display === 'none') {
+                        el.style.display = el.tagName === 'DIV' ? 'block' : 'inline-flex';
+                    }
+                });
+
+                nav.querySelectorAll('[data-admin-nav-item="swapped"]').forEach(function (el) {
+                    if (!el.hasAttribute('hidden')) { el.setAttribute('hidden', ''); }
+                });
+
+                var dashLink = nav.querySelector('[data-admin-nav-dashboard-link]');
+                if (dashLink) {
+                    dashLink.classList.toggle('is-active', panel === '');
+                }
+
+                busy = false;
+            }
+
+            var toggle = document.querySelector('[data-admin-manage-toggle]');
+            if (toggle) {
+                toggle.classList.toggle('is-panel-active', panel !== '');
+            }
+            document.querySelectorAll('[data-admin-manage-link]').forEach(function (link) {
+                link.classList.toggle('is-active', link.getAttribute('data-admin-manage-link') === panel);
+            });
+
+            enforce();
+            document.addEventListener('DOMContentLoaded', enforce);
+            window.addEventListener('load', function () { enforce(); window.setTimeout(enforce, 300); });
+
+            if ('MutationObserver' in window) {
+                new MutationObserver(enforce).observe(nav, { subtree: true, attributes: true, attributeFilter: ['hidden', 'class', 'style'] });
+            }
+        })();
+    </script>
+    <script>
+        window.__creatyAdminHandoverProofConfig = {
+            endpoint: <?php echo json_encode($assetBase . 'admin/dashboard/upload_handover_proof.php', JSON_UNESCAPED_SLASHES); ?>,
+            assetBase: <?php echo json_encode($assetBase, JSON_UNESCAPED_SLASHES); ?>
+        };
+    </script>
+    <script>
+        // Handover photo: required proof (photo with the customer) before Confirm Pickup / Meet-up Handover.
+        (function () {
+            var config = window.__creatyAdminHandoverProofConfig || {};
+            var backdrop = document.querySelector('[data-admin-booking-detail-backdrop]');
+            var box = document.querySelector('[data-admin-handover-proof]');
+
+            if (!backdrop || !box || !config.endpoint) { return; }
+
+            var form = backdrop.querySelector('[data-admin-booking-status-form]');
+            var orderInput = backdrop.querySelector('[data-admin-booking-status-order-id]');
+            var tokenInput = form ? form.querySelector('input[name="booking_action_token"]') : null;
+            var fileInput = box.querySelector('[data-admin-handover-file]');
+            var filenameEl = box.querySelector('[data-admin-handover-filename]');
+            var selectBtn = box.querySelector('[data-admin-handover-select]');
+            var uploadBtn = box.querySelector('[data-admin-handover-upload]');
+            var errorEl = box.querySelector('[data-admin-handover-error]');
+            var statusEl = box.querySelector('[data-admin-handover-status]');
+            var previewLink = box.querySelector('[data-admin-handover-preview]');
+            var previewImg = box.querySelector('[data-admin-handover-preview-image]');
+            var imagesWrap = backdrop.querySelector('[data-admin-handover-images-wrap]');
+            var imagesLink = backdrop.querySelector('[data-admin-handover-images-link]');
+            var imagesImg = backdrop.querySelector('[data-admin-handover-images-image]');
+            var imagesMeta = backdrop.querySelector('[data-admin-handover-images-meta]');
+
+            var proofs = {};
+            var lastOrderId = '';
+            var isUploading = false;
+            var handoverSelector = 'button[value="confirm-pickup-handover"], button[value="confirm-meetup-handover"]';
+
+            function currentOrderId() {
+                return orderInput ? String(orderInput.value || '').trim() : '';
+            }
+
+            function findBooking(orderId) {
+                var list = Array.isArray(window.__creatyAdminBookings) ? window.__creatyAdminBookings : [];
+                for (var i = 0; i < list.length; i++) {
+                    if (list[i] && String(list[i].id || '') === orderId) { return list[i]; }
+                }
+                return null;
+            }
+
+            function proofFor(orderId) {
+                if (!orderId) { return null; }
+                if (proofs[orderId]) { return proofs[orderId]; }
+
+                var booking = findBooking(orderId);
+                if (booking && (booking.handoverProofUrl || booking.handoverProofPath)) {
+                    return {
+                        url: String(booking.handoverProofUrl || (config.assetBase + String(booking.handoverProofPath).replace(/^\//, ''))),
+                        uploadedAt: String(booking.handoverProofUploadedAt || ''),
+                        uploadedBy: String(booking.handoverProofUploadedBy || '')
+                    };
+                }
+                return null;
+            }
+
+            function formatWhen(value) {
+                var d = new Date(value);
+                return isNaN(d.getTime()) ? '' : d.toLocaleString();
+            }
+
+            function setError(message) {
+                if (!errorEl) { return; }
+                errorEl.textContent = message || '';
+                errorEl.hidden = !message;
+            }
+
+            function render() {
+                var orderId = currentOrderId();
+                var modalOpen = !backdrop.hidden && orderId !== '';
+
+                if (orderId !== lastOrderId) {
+                    lastOrderId = orderId;
+                    if (fileInput) { fileInput.value = ''; }
+                    if (filenameEl) { filenameEl.textContent = 'No file selected'; }
+                    setError('');
+                }
+
+                var proof = modalOpen ? proofFor(orderId) : null;
+                var handoverButtons = form ? Array.prototype.slice.call(form.querySelectorAll(handoverSelector)) : [];
+                var handoverPending = modalOpen && handoverButtons.some(function (btn) { return !btn.hidden; });
+
+                box.hidden = !handoverPending;
+
+                if (handoverPending) {
+                    if (statusEl) {
+                        statusEl.textContent = proof
+                            ? 'Handover photo saved. You can now confirm the handover.'
+                            : 'Take a photo of the handover with the customer. It is required before you can confirm the handover.';
+                        statusEl.classList.toggle('is-ready', Boolean(proof));
+                    }
+                    if (uploadBtn && !isUploading) { uploadBtn.textContent = proof ? 'Replace Photo' : 'Upload Photo'; }
+                    if (previewLink && previewImg) {
+                        previewLink.hidden = !proof;
+                        if (proof) {
+                            previewLink.href = proof.url;
+                            if (previewImg.getAttribute('src') !== proof.url) { previewImg.src = proof.url; }
+                        }
+                    }
+
+                    handoverButtons.forEach(function (btn) {
+                        if (btn.hidden) { return; }
+                        var shouldLock = !proof;
+                        if (btn.disabled !== shouldLock) { btn.disabled = shouldLock; }
+                        if (shouldLock) {
+                            btn.setAttribute('data-admin-handover-locked', '1');
+                            btn.title = 'Upload the handover photo first';
+                        } else {
+                            btn.removeAttribute('data-admin-handover-locked');
+                            btn.removeAttribute('title');
+                        }
+                    });
+                }
+
+                if (imagesWrap) {
+                    imagesWrap.hidden = !proof;
+                    if (proof) {
+                        if (imagesLink) { imagesLink.href = proof.url; }
+                        if (imagesImg && imagesImg.getAttribute('src') !== proof.url) { imagesImg.src = proof.url; }
+                        if (imagesMeta) {
+                            var when = formatWhen(proof.uploadedAt);
+                            var by = proof.uploadedBy ? ' by ' + proof.uploadedBy : '';
+                            imagesMeta.textContent = (when ? 'Uploaded at: ' + when : 'Handover photo uploaded.') + by;
+                        }
+                    }
+                }
+            }
+
+            // Resize big phone photos so the upload stays small and reliable.
+            function readAsUploadDataUrl(file) {
+                return new Promise(function (resolve, reject) {
+                    var reader = new FileReader();
+                    reader.onerror = function () { reject(new Error('Unable to read the selected photo.')); };
+                    reader.onload = function (e) {
+                        var original = String(e && e.target && e.target.result ? e.target.result : '');
+                        if (original.indexOf('data:image/') !== 0) { reject(new Error('Please select a valid image file.')); return; }
+
+                        var img = new Image();
+                        img.onerror = function () { resolve(original); };
+                        img.onload = function () {
+                            try {
+                                var maxSide = 1600;
+                                var scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+                                var canvas = document.createElement('canvas');
+                                canvas.width = Math.max(1, Math.round(img.width * scale));
+                                canvas.height = Math.max(1, Math.round(img.height * scale));
+                                var ctx = canvas.getContext('2d');
+                                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                                resolve(canvas.toDataURL('image/jpeg', 0.85));
+                            } catch (err) {
+                                resolve(original);
+                            }
+                        };
+                        img.src = original;
+                    };
+                    reader.readAsDataURL(file);
+                });
+            }
+
+            if (selectBtn && fileInput) {
+                selectBtn.addEventListener('click', function () { fileInput.click(); });
+                fileInput.addEventListener('change', function () {
+                    setError('');
+                    if (filenameEl) {
+                        filenameEl.textContent = fileInput.files && fileInput.files.length ? fileInput.files[0].name : 'No file selected';
+                    }
+                });
+            }
+
+            if (uploadBtn) {
+                uploadBtn.addEventListener('click', function () {
+                    if (isUploading) { return; }
+
+                    var orderId = currentOrderId();
+                    if (!orderId) { return; }
+
+                    if (!fileInput || !fileInput.files || !fileInput.files.length) {
+                        setError('Select the handover photo first.');
+                        return;
+                    }
+
+                    var file = fileInput.files[0];
+                    if (!/^image\//i.test(file.type || '')) {
+                        setError('Please select an image file (PNG, JPG or WEBP).');
+                        return;
+                    }
+
+                    isUploading = true;
+                    uploadBtn.disabled = true;
+                    uploadBtn.textContent = 'Uploading...';
+                    setError('');
+
+                    readAsUploadDataUrl(file).then(function (imageDataUrl) {
+                        return fetch(config.endpoint, {
+                            method: 'POST',
+                            credentials: 'same-origin',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                orderId: orderId,
+                                imageDataUrl: imageDataUrl,
+                                bookingActionToken: tokenInput ? tokenInput.value : ''
+                            })
+                        });
+                    }).then(function (response) {
+                        return response.json().catch(function () { return {}; }).then(function (data) {
+                            if (!response.ok || !data || data.ok !== true) {
+                                throw new Error(data && data.message ? String(data.message) : 'Upload failed. Please try again.');
+                            }
+                            return data;
+                        });
+                    }).then(function (data) {
+                        var saved = data.handoverProof || {};
+                        var url = config.assetBase + String(saved.path || '').replace(/^\//, '') + '?t=' + Date.now();
+
+                        proofs[orderId] = { url: url, uploadedAt: String(saved.uploadedAt || ''), uploadedBy: String(saved.uploadedBy || '') };
+
+                        var booking = findBooking(orderId);
+                        if (booking) {
+                            booking.handoverProofPath = String(saved.path || '');
+                            booking.handoverProofUrl = url;
+                            booking.handoverProofUploadedAt = String(saved.uploadedAt || '');
+                            booking.handoverProofUploadedBy = String(saved.uploadedBy || '');
+                        }
+
+                        fileInput.value = '';
+                        if (filenameEl) { filenameEl.textContent = 'No file selected'; }
+                    }).catch(function (error) {
+                        setError(error && error.message ? error.message : 'Upload failed. Please try again.');
+                    }).then(function () {
+                        isUploading = false;
+                        uploadBtn.disabled = false;
+                        render();
+                    });
+                });
+            }
+
+            // Safety net: never let a handover be submitted without a saved photo.
+            if (form) {
+                form.addEventListener('click', function (event) {
+                    var target = event.target && event.target.closest ? event.target.closest(handoverSelector) : null;
+                    if (target && !proofFor(currentOrderId())) {
+                        event.preventDefault();
+                        event.stopImmediatePropagation();
+                        setError('Upload the handover photo before confirming the handover.');
+                    }
+                }, true);
+            }
+
+            // Warn before completing an order that has no handover photo.
+            // Listens on window (capture) so it runs before any other click handler on the page.
+            if (form) {
+                window.addEventListener('click', function (event) {
+                    if (!event.target || !form.contains(event.target)) { return; }
+                    var target = event.target.closest ? event.target.closest('button[value="completed"]') : null;
+                    if (!target) { return; }
+
+                    var orderId = currentOrderId();
+                    var booking = findBooking(orderId);
+                    var method = booking ? String(booking.receivingMethod || '').toLowerCase() : '';
+
+                    // Delivery orders have their own receipts, so only warn for pick-up / meet-up orders.
+                    if (method.indexOf('deliver') !== -1) { return; }
+
+                    if (!proofFor(orderId)) {
+                        if (!window.confirm('Are you sure you want to continue without a handover picture?')) {
+                            event.preventDefault();
+                            event.stopImmediatePropagation();
+                        }
+                    }
+                }, true);
+            }
+
+            render();
+            window.setInterval(render, 300);
+        })();
+    </script>
+    <script>
+        // Users: live search that works together with the existing role filter.
+        (function () {
+            var input = document.querySelector('[data-admin-users-search]');
+            var summary = document.querySelector('[data-admin-users-search-summary]');
+            var roleFilter = document.querySelector('[data-admin-users-filter]');
+            var rows = Array.prototype.slice.call(document.querySelectorAll('[data-admin-user-row]'));
+            if (!input || !rows.length) { return; }
+
+            var tbody = rows[0].parentNode;
+            var emptyRow = document.createElement('tr');
+            var emptyCell = document.createElement('td');
+            emptyCell.colSpan = 6;
+            emptyCell.className = 'admin-users-empty-cell';
+            emptyCell.textContent = 'No users match your search.';
+            emptyRow.appendChild(emptyCell);
+            emptyRow.hidden = true;
+            tbody.appendChild(emptyRow);
+
+            var haystacks = rows.map(function (row) {
+                var cells = Array.prototype.slice.call(row.querySelectorAll('td:not(.admin-users-actions-cell)'));
+                return cells.map(function (cell) { return cell.textContent || ''; }).join(' ').replace(/\s+/g, ' ').trim().toLowerCase();
+            });
+
+            function apply() {
+                var terms = String(input.value || '').toLowerCase().split(/\s+/).filter(Boolean);
+                var visible = 0;
+
+                rows.forEach(function (row, index) {
+                    var matches = terms.every(function (term) { return haystacks[index].indexOf(term) !== -1; });
+
+                    if (matches) { row.removeAttribute('data-search-hidden'); }
+                    else { row.setAttribute('data-search-hidden', '1'); }
+
+                    if (matches && !row.hidden) { visible += 1; }
+                });
+
+                emptyRow.hidden = visible !== 0;
+
+                if (summary) {
+                    summary.textContent = 'Showing ' + visible + ' of ' + rows.length + ' user' + (rows.length === 1 ? '' : 's');
+                }
+            }
+
+            input.addEventListener('input', apply);
+            input.addEventListener('keydown', function (event) {
+                if (event.key === 'Escape' && input.value !== '') {
+                    input.value = '';
+                    apply();
+                }
+            });
+
+            if (roleFilter) {
+                roleFilter.addEventListener('change', function () { window.setTimeout(apply, 0); });
+            }
+
+            apply();
+        })();
+    </script>
+    <script>
+        // Users: Edit / Delete account dialogs.
+        (function () {
+            var editBackdrop = document.querySelector('[data-admin-user-edit-backdrop]');
+            var deleteBackdrop = document.querySelector('[data-admin-user-delete-backdrop]');
+            if (!editBackdrop && !deleteBackdrop) { return; }
+
+            var roleLabels = { admin: 'Admin', staff: 'Staff', customer: 'Customer' };
+
+            function show(backdrop, focusSelector) {
+                backdrop.hidden = false;
+                var target = focusSelector ? backdrop.querySelector(focusSelector) : null;
+                if (target) { window.setTimeout(function () { target.focus(); }, 30); }
+            }
+
+            function hide(backdrop) { if (backdrop) { backdrop.hidden = true; } }
+
+            function setGroupState(group, active) {
+                group.hidden = !active;
+                group.querySelectorAll('input').forEach(function (input) {
+                    input.disabled = !active;
+                    if (input.hasAttribute('data-required-when-active')) { input.required = active; }
+                });
+            }
+
+            function openEdit(button) {
+                if (!editBackdrop) { return; }
+
+                var type = String(button.getAttribute('data-user-type') || '');
+                var form = editBackdrop.querySelector('[data-admin-user-edit-form]');
+                var isCustomer = type === 'customer';
+
+                editBackdrop.querySelector('[data-admin-user-edit-title]').textContent = 'Edit ' + (roleLabels[type] || 'Account');
+                form.querySelector('[data-admin-user-edit-type]').value = type;
+                form.querySelector('[data-admin-user-edit-id]').value = String(button.getAttribute('data-user-id') || '');
+                form.querySelector('[data-admin-user-edit-login-label]').textContent = type === 'admin' ? 'Username' : 'Email';
+                form.querySelector('[data-admin-user-edit-login]').textContent = String(button.getAttribute('data-user-login') || '');
+
+                setGroupState(form.querySelector('[data-admin-user-edit-group="customer"]'), isCustomer);
+                setGroupState(form.querySelector('[data-admin-user-edit-group="employee"]'), !isCustomer);
+
+                form.querySelector('[name="edit_first_name"]').value = String(button.getAttribute('data-user-first-name') || '');
+                form.querySelector('[name="edit_last_name"]').value = String(button.getAttribute('data-user-last-name') || '');
+                form.querySelector('[name="edit_name"]').value = String(button.getAttribute('data-user-name') || '').replace(/^-$/, '');
+                form.querySelector('[name="edit_employee_number"]').value = String(button.getAttribute('data-user-employee') || '');
+                form.querySelector('[name="edit_new_password"]').value = '';
+                form.querySelector('[name="edit_confirm_password"]').value = '';
+
+                show(editBackdrop, isCustomer ? '[name="edit_first_name"]' : '[name="edit_name"]');
+            }
+
+            function openDelete(button) {
+                if (!deleteBackdrop) { return; }
+
+                var form = deleteBackdrop.querySelector('[data-admin-user-delete-form]');
+                var roleLabel = roleLabels[String(button.getAttribute('data-user-type') || '')] || 'account';
+                var label = String(button.getAttribute('data-user-label') || '');
+
+                form.querySelector('[data-admin-user-delete-type]').value = String(button.getAttribute('data-user-type') || '');
+                form.querySelector('[data-admin-user-delete-id]').value = String(button.getAttribute('data-user-id') || '');
+                deleteBackdrop.querySelector('[data-admin-user-delete-copy]').textContent =
+                    'Delete the ' + roleLabel.toLowerCase() + ' account "' + label + '"? This permanently removes the account and cannot be undone.';
+
+                show(deleteBackdrop, '[data-admin-user-delete-cancel]');
+            }
+
+            document.addEventListener('click', function (event) {
+                var target = event.target;
+                if (!target || !target.closest) { return; }
+
+                var editButton = target.closest('[data-admin-users-edit]');
+                if (editButton) { openEdit(editButton); return; }
+
+                var deleteButton = target.closest('[data-admin-users-delete]');
+                if (deleteButton && !deleteButton.disabled) { openDelete(deleteButton); return; }
+
+                if (target.closest('[data-admin-user-edit-close]') || target === editBackdrop) { hide(editBackdrop); return; }
+                if (target.closest('[data-admin-user-delete-cancel]') || target === deleteBackdrop) { hide(deleteBackdrop); }
+            });
+
+            document.addEventListener('keydown', function (event) {
+                if (event.key !== 'Escape') { return; }
+                hide(editBackdrop);
+                hide(deleteBackdrop);
+            });
+        })();
+    </script>
+    <script>
+        (function () {
+            var params = new URLSearchParams(window.location.search);
+            var tool = params.get('open_tool');
+            if (tool !== 'settings' && tool !== 'print') { return; }
+            params.delete('open_tool');
+            var cleaned = window.location.pathname + (params.toString() ? '?' + params.toString() : '') + window.location.hash;
+            window.history.replaceState(null, '', cleaned);
+            window.addEventListener('load', function () {
+                setTimeout(function () {
+                    var selector = tool === 'settings' ? '[data-admin-dashboard-settings-open]' : '[data-admin-business-report-print]';
+                    var button = document.querySelector(selector);
+                    if (button && !button.hidden) { button.click(); }
+                }, 400);
+            });
+        })();
+    </script>
 </body>
 </html>
 

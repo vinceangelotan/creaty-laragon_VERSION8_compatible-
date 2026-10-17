@@ -478,5 +478,79 @@
             },
             "recommendations": []
         }
+    },
+    {
+        "archiveKey": "Canon New Product (Copy) 20261012-073745",
+        "archivedAt": "2026-10-12T07:37:45+00:00",
+        "originalKey": "canon-new-product-copy",
+        "product": {
+            "brand": "Canon",
+            "name": "New Product (Copy)",
+            "skillLevels": [
+                "Beginner"
+            ],
+            "skillLevel": "Beginner",
+            "category": "Photography",
+            "price": "0.00",
+            "discountPercent": 0,
+            "spec1": "New camera specification 1",
+            "spec2": "New camera specification 2",
+            "tagline": "Add a short product tagline.",
+            "cameraImage": "assets/cameras/_archived/Canon%20New%20Product%20%28Copy%29%2020261012-073745.png",
+            "informationImages": [],
+            "captureSlides": [],
+            "specs": {
+                "Brand": [
+                    "Canon"
+                ],
+                "Imaging and Performance": [
+                    "Add imaging and performance details."
+                ],
+                "Video": [
+                    "Add video details."
+                ],
+                "Physical Specifications": [
+                    "Add physical specifications."
+                ]
+            },
+            "recommendations": []
+        }
+    },
+    {
+        "archiveKey": "Canon New Product (Copy) 20261015-102348",
+        "archivedAt": "2026-10-15T10:23:48+00:00",
+        "originalKey": "canon-new-product-copy",
+        "product": {
+            "brand": "Canon",
+            "name": "New Product (Copy)",
+            "skillLevels": [
+                "Beginner"
+            ],
+            "skillLevel": "Beginner",
+            "category": "Photography",
+            "price": "0.00",
+            "discountPercent": 0,
+            "spec1": "New camera specification 1",
+            "spec2": "New camera specification 2",
+            "tagline": "Add a short product tagline.",
+            "cameraImage": "assets/cameras/_archived/Canon%20New%20Product%20%28Copy%29%2020261015-102348.png",
+            "informationImages": [],
+            "captureSlides": [],
+            "specs": {
+                "Brand": [
+                    "Canon"
+                ],
+                "Imaging and Performance": [
+                    "Add imaging and performance details."
+                ],
+                "Video": [
+                    "Add video details."
+                ],
+                "Physical Specifications": [
+                    "Add physical specifications."
+                ]
+            },
+            "recommendations": []
+        }
     }
 ]

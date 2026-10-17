@@ -24,6 +24,33 @@ $logoutPath = 'customer-logout/';
 require __DIR__ . '/config/products_repository.php';
 require_once __DIR__ . '/customer_notifications_center.php';
 $products = load_products_repository();
+
+// Show every camera, but list the ones that match the account's skill level first.
+function order_products_for_skill_level($products, $skillLevel)
+{
+    if (!is_array($products)) {
+        return [];
+    }
+
+    $targetSkillLevel = normalize_product_skill_level($skillLevel);
+    $matching = [];
+    $others = [];
+
+    foreach ($products as $productKey => $product) {
+        $productSkillLevels = is_array($product)
+            ? normalize_product_skill_levels($product['skillLevels'] ?? ($product['skillLevel'] ?? default_product_skill_level()))
+            : [];
+
+        if (in_array($targetSkillLevel, $productSkillLevels, true)) {
+            $matching[$productKey] = $product;
+        } else {
+            $others[$productKey] = $product;
+        }
+    }
+
+    return $matching + $others;
+}
+
 $productBrandOptions = load_product_brands_repository();
 $productBrandValueMap = product_brand_value_map($productBrandOptions);
 $customerNotificationCenter = build_customer_notification_center('', $isCustomerLoggedIn);
@@ -56,7 +83,7 @@ if ($isCustomerLoggedIn) {
 
     $customerSkillLevel = normalize_product_skill_level($customerSkillLevel);
     $_SESSION['customer_skill_level'] = $customerSkillLevel;
-    $products = filter_products_by_skill_level($products, $customerSkillLevel);
+    $products = order_products_for_skill_level($products, $customerSkillLevel);
 }
 
 if (!is_array($products)) {
@@ -138,8 +165,8 @@ $activePromoBannerSlots = $promoBannerSlots;
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
-    <link rel="stylesheet" href="css/style.css?v=20261008-2">
-    <link rel="stylesheet" href="css/catalog-filters.css?v=20261008-1">
+    <link rel="stylesheet" href="css/style.css?v=20261015-2">
+    <link rel="stylesheet" href="css/catalog-filters.css?v=20261015-2">
 </head>
 <body class="home-page-customer">
     <header class="site-header">
@@ -385,6 +412,15 @@ $activePromoBannerSlots = $promoBannerSlots;
                         $discounted = $price * (1 - ($discount / 100));
                         $imagePath = trim((string) ($product['cameraImage'] ?? ''));
                         $skillLevels = normalize_product_skill_levels($product['skillLevels'] ?? ($product['skillLevel'] ?? default_product_skill_level()));
+                        $isBeginnerCamera = in_array('Beginner', $skillLevels, true);
+                        $isProfessionalCamera = in_array('Professional', $skillLevels, true);
+                        if ($isBeginnerCamera && $isProfessionalCamera) {
+                            $skillNote = 'FOR BEGINNERS & PROFESSIONALS';
+                        } elseif ($isProfessionalCamera) {
+                            $skillNote = 'FOR PROFESSIONALS';
+                        } else {
+                            $skillNote = 'FOR BEGINNERS';
+                        }
                         $categoryValue = product_category_slug(normalize_product_category($product['category'] ?? default_product_category()));
                     ?>
                     <article class="product-card<?php echo $isPromo ? ' product-card-highlight' : ''; ?>" data-product-key="<?php echo htmlspecialchars((string) $productKey, ENT_QUOTES, 'UTF-8'); ?>" data-product-name="<?php echo htmlspecialchars($productName, ENT_QUOTES, 'UTF-8'); ?>" data-brand="<?php echo htmlspecialchars($brandValue, ENT_QUOTES, 'UTF-8'); ?>" data-skill-levels="<?php echo htmlspecialchars(strtolower(implode(' ', $skillLevels)), ENT_QUOTES, 'UTF-8'); ?>" data-category="<?php echo htmlspecialchars($categoryValue, ENT_QUOTES, 'UTF-8'); ?>" data-price="<?php echo htmlspecialchars(number_format($discounted, 2, '.', ''), ENT_QUOTES, 'UTF-8'); ?>">
@@ -400,6 +436,7 @@ $activePromoBannerSlots = $promoBannerSlots;
                             <h3><a class="product-title-link" href="customer-products/?product=<?php echo urlencode((string) $productKey); ?>"><?php echo htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8'); ?></a></h3>
                             <p><?php echo htmlspecialchars($specOne, ENT_QUOTES, 'UTF-8'); ?></p>
                             <p><?php echo htmlspecialchars($specTwo, ENT_QUOTES, 'UTF-8'); ?></p>
+                            <span class="product-skill-note"><?php echo htmlspecialchars($skillNote, ENT_QUOTES, 'UTF-8'); ?></span>
                             <?php if ($isPromo): ?>
                                 <p style="margin-top: 0.85rem; margin-bottom: 0; text-align: center; font-size: 1.2rem; font-weight: 800; color: #dde531;">
                                     <span style="color: #a1a1aa; text-decoration: line-through; font-size: 0.95rem; font-weight: 600; margin-right: 0.45rem;">&#8369; <?php echo htmlspecialchars(number_format($price, 2), ENT_QUOTES, 'UTF-8'); ?></span>
@@ -423,6 +460,6 @@ $activePromoBannerSlots = $promoBannerSlots;
     <?php render_customer_notification_center_bootstrap_script($customerNotificationCenter, ''); ?>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
-    <script src="js/script.js?v=20261008-1"></script>
+    <script src="js/script.js?v=20261015-1"></script>
 </body>
 </html>

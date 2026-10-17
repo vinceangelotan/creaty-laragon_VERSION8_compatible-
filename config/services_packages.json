@@ -6,6 +6,8 @@
         "description": "3 hours with 1 photographer, 200+ edited photos, Online gallery and download, No transportation fee around Carmona.",
         "price": "3299.00",
         "discountPercent": 10,
+        "durationUnit": "hours",
+        "durationValue": 3,
         "thumbnail_images": [
             "assets/service_packages/photography-package-1/civil-wedding_Jerome-and-Marian/CLT05321.jpeg",
             "assets/service_packages/photography-package-1/civil-wedding_Jerome-and-Marian/CLT05897.jpeg",
@@ -25,6 +27,8 @@
         "description": "5 hours with 2 photographers, 400+ edited photos, Online gallery and download, No transportation fee around Carmona and Laguna.",
         "price": "8499.00",
         "discountPercent": 0,
+        "durationUnit": "hours",
+        "durationValue": 5,
         "thumbnail_images": [
             "assets/service_packages/photography-package-2/wedding_Jeanne-and-Nilo/CLT04035.jpeg",
             "assets/service_packages/photography-package-2/wedding_Jeanne-and-Nilo/CLT04801.jpeg",
@@ -44,6 +48,8 @@
         "description": "Full day with 2 photographers, 600+ edited photos, Online gallery and download, No transportation fee around Carmona and Laguna.",
         "price": "10499.00",
         "discountPercent": 0,
+        "durationUnit": "hours",
+        "durationValue": 8,
         "thumbnail_images": [
             "assets/service_packages/photography-package-3/birthday_Zofias-Birthday/CLT00571.jpeg",
             "assets/service_packages/photography-package-3/birthday_Zofias-Birthday/CLT00595.jpeg",
@@ -65,8 +71,9 @@
         "description": "3-4 hours with 1 photographer and 1 videographer, 200+ edited photos and videos, Online gallery and download, No transportation fee around Carmona.",
         "price": "7499.00",
         "discountPercent": 0,
+        "durationUnit": "hours",
+        "durationValue": 4,
         "thumbnail_images": [
-            "assets/service_packages/photography-videography-package-1/pre-debut_Sina/2026-04-02-00-03-40.mp4",
             "assets/service_packages/photography-videography-package-1/pre-debut_Sina/DSC00058.jpeg",
             "assets/service_packages/photography-videography-package-1/pre-debut_Sina/DSC00125.jpeg",
             "assets/service_packages/photography-videography-package-1/pre-debut_Sina/IMG_1845.jpeg",
@@ -86,6 +93,8 @@
         "description": "5-6 hours with 2 photographers and 1 videographer, 400+ edited photos and videos, Online gallery and download, No transportation fee around Carmona and Laguna.",
         "price": "10899.00",
         "discountPercent": 0,
+        "durationUnit": "hours",
+        "durationValue": 6,
         "thumbnail_images": [
             "assets/service_packages/photography-videography-package-2/business-photoshoot_Romeo-must-be-smiling/IMG_6513.jpeg",
             "assets/service_packages/photography-videography-package-2/business-photoshoot_Romeo-must-be-smiling/IMG_6516.jpeg",
@@ -109,6 +118,8 @@
         "description": "Full day with 2 photographers, 1 videographer and 1 assistant, 600+ edited photos and videos, 20 page Photo album, Online gallery and download, No transportation fee around Carmona and Laguna.",
         "price": "13899.00",
         "discountPercent": 0,
+        "durationUnit": "hours",
+        "durationValue": 8,
         "thumbnail_images": [
             "assets/service_packages/photography-videography-package-3/business-photoshoot_JCRD-Builders/CLT02022.jpeg",
             "assets/service_packages/photography-videography-package-3/business-photoshoot_JCRD-Builders/CLT02028.jpeg",
